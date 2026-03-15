@@ -1,0 +1,501 @@
+.dashboard {
+  min-height: 100vh;
+}
+
+.dashboard.light {
+  background: #f5f5f5;
+}
+
+.dashboard.dark {
+  background: #0d1117;
+}
+
+/* 顶部导航栏 */
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 16px;
+  height: 48px;
+  background: #001529;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.dashboard.dark .header {
+  background: #161b22;
+  border-bottom: 1px solid #30363d;
+}
+
+.logo {
+  color: #fff;
+  font-size: 18px;
+  font-weight: bold;
+}
+
+.header-center {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* 顶部数据条 - 仿无川风格 */
+.top-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 16px;
+  height: 40px;
+  background: #fff;
+  border-bottom: 1px solid #e8e8e8;
+  font-size: 13px;
+  overflow-x: auto;
+  white-space: nowrap;
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE/Edge */
+}
+
+.top-bar::-webkit-scrollbar {
+  display: none; /* Chrome/Safari/Opera */
+}
+
+.top-bar.dark {
+  background: #161b22;
+  border-bottom-color: #30363d;
+}
+
+.top-bar-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.top-bar-item .label {
+  color: #666;
+  font-size: 13px;
+}
+
+.top-bar.dark .top-bar-item .label {
+  color: #8b949e;
+}
+
+.top-bar-item .value {
+  font-weight: bold;
+  color: #333;
+  font-size: 13px;
+}
+
+.top-bar.dark .top-bar-item .value {
+  color: #c9d1d9;
+}
+
+/* A股涨跌颜色：涨红跌绿 */
+.top-bar-item .value.up {
+  color: #f5222d;
+}
+
+.top-bar-item .value.down {
+  color: #52c41a;
+}
+
+/* 情绪温度颜色 */
+.temp-high {
+  color: #f5222d !important; /* ≥70 红色 */
+}
+
+.temp-medium-high {
+  color: #fa8c16 !important; /* 50-70 橙色 */
+}
+
+.temp-medium {
+  color: #52c41a !important; /* 30-50 绿色 */
+}
+
+.temp-low {
+  color: #1890ff !important; /* <30 蓝色 */
+}
+
+.top-bar-item .value.highlight {
+  color: #fa8c16;
+  font-size: 14px;
+}
+
+.top-bar-item .change {
+  font-size: 11px;
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
+.top-bar-item .change.up {
+  background: #fff1f0;
+  color: #f5222d;
+}
+
+.top-bar-item .change.down {
+  background: #f6ffed;
+  color: #52c41a;
+}
+
+.top-bar.dark .top-bar-item .change.up {
+  background: rgba(245, 34, 45, 0.2);
+}
+
+.top-bar.dark .top-bar-item .change.down {
+  background: rgba(82, 196, 26, 0.2);
+}
+
+.top-bar-item .arrow {
+  font-size: 11px;
+  margin-left: 2px;
+}
+
+.top-bar-item .arrow.up {
+  color: #f5222d;
+}
+
+.top-bar-item .arrow.down {
+  color: #52c41a;
+}
+
+.top-bar-item .vs {
+  color: #999;
+  font-size: 11px;
+}
+
+.top-bar-item.date {
+  color: #999;
+  font-size: 12px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+/* 分隔符 */
+.top-bar-divider {
+  width: 1px;
+  height: 20px;
+  background: #e8e8e8;
+  margin: 0 4px;
+  flex-shrink: 0;
+}
+
+.top-bar.dark .top-bar-divider {
+  background: #30363d;
+}
+
+/* 侧边栏 */
+.sider {
+  background: #fff;
+  border-right: 1px solid #e8e8e8;
+}
+
+.dashboard.dark .sider {
+  background: #161b22;
+  border-right-color: #30363d;
+}
+
+.sider .ant-menu {
+  border-right: none;
+}
+
+/* 内容区 */
+.content {
+  padding: 16px;
+  min-height: calc(100vh - 88px);
+  overflow-y: auto;
+}
+
+.dashboard.light .content {
+  background: #f5f5f5;
+}
+
+.dashboard.dark .content {
+  background: #0d1117;
+}
+
+/* 卡片样式 */
+.control-card {
+  margin-bottom: 16px;
+}
+
+.chart-card {
+  height: 100%;
+  border-radius: 8px;
+}
+
+/* 图表网格布局 */
+.charts-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+}
+
+.dashboard.dark .ant-card {
+  background: #161b22;
+  border-color: #30363d;
+}
+
+.dashboard.dark .ant-card-head {
+  background: #161b22;
+  border-color: #30363d;
+  color: #c9d1d9;
+}
+
+.dashboard.dark .ant-statistic-title {
+  color: #8b949e;
+}
+
+.dashboard.dark .ant-statistic-content {
+  color: #c9d1d9;
+}
+
+/* 主色调应用 */
+.primary-color {
+  color: #1890ff;
+}
+
+.bg-primary {
+  background-color: #1890ff;
+}
+
+/* 深色模式特定样式 */
+.dark-bg-primary {
+  background-color: #161b22;
+}
+
+.dark-bg-secondary {
+  background-color: #0d1117;
+}
+
+/* 自选股样式 */
+.watchlist-card {
+  border-radius: 8px;
+}
+
+.watchlist-card .ant-card-body {
+  padding: 16px;
+}
+
+/* 股票涨跌幅颜色 - A股涨红跌绿 */
+.stock-change {
+  font-weight: bold;
+  font-size: 14px;
+}
+
+.stock-change.up {
+  color: #f5222d !important;
+}
+
+.stock-change.down {
+  color: #52c41a !important;
+}
+
+/* 统计卡片样式 */
+.stat-card {
+  border-radius: 8px;
+  text-align: center;
+}
+
+.stat-card .ant-statistic-title {
+  font-size: 12px;
+  color: #8c8c8c;
+}
+
+.stat-card .ant-statistic-content {
+  font-size: 20px;
+  font-weight: bold;
+}
+
+.dark .stat-card {
+  background: #161b22;
+  border-color: #30363d;
+}
+
+/* 表格行样式 */
+.watchlist-table .ant-table-row {
+  transition: background 0.3s;
+}
+
+.watchlist-table .ant-table-row:hover {
+  background: rgba(24, 144, 255, 0.05);
+}
+
+/* 拖拽样式 */
+.dragging-row {
+  background: rgba(24, 144, 255, 0.1) !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+/* 预警标签样式 */
+.alert-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* 分组标签 */
+.group-tag {
+  font-size: 10px;
+  padding: 0 6px;
+  height: 18px;
+  line-height: 16px;
+  border-radius: 3px;
+}
+
+/* 操作按钮组 */
+.action-buttons {
+  opacity: 0.7;
+  transition: opacity 0.2s;
+}
+
+.action-buttons:hover {
+  opacity: 1;
+}
+
+/* 移动端底部导航栏 */
+.mobile-nav {
+  display: none;
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 56px;
+  background: #fff;
+  border-top: 1px solid #e8e8e8;
+  z-index: 1000;
+  overflow-x: auto;
+  white-space: nowrap;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.mobile-nav::-webkit-scrollbar {
+  display: none;
+}
+
+.mobile-nav.dark {
+  background: #161b22;
+  border-top-color: #30363d;
+}
+
+.mobile-nav-item {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-width: 60px;
+  height: 100%;
+  padding: 4px 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+  color: #666;
+  font-size: 11px;
+  gap: 2px;
+}
+
+.mobile-nav.dark .mobile-nav-item {
+  color: #8b949e;
+}
+
+.mobile-nav-item:hover {
+  background: rgba(24, 144, 255, 0.1);
+}
+
+.mobile-nav-item.active {
+  color: #1890ff;
+}
+
+.mobile-nav.dark .mobile-nav-item.active {
+  color: #1890ff;
+}
+
+.mobile-nav-icon {
+  font-size: 20px;
+  line-height: 1;
+}
+
+.mobile-nav-text {
+  font-size: 10px;
+  line-height: 1.2;
+}
+
+/* 响应式布局 */
+@media (max-width: 1200px) {
+  .top-bar {
+    padding: 0 12px;
+    gap: 6px;
+  }
+  
+  .top-bar-item {
+    gap: 3px;
+  }
+}
+
+@media (max-width: 768px) {
+  .header {
+    padding: 0 12px;
+  }
+  
+  .top-bar {
+    padding: 0 12px;
+    gap: 6px;
+    font-size: 12px;
+    -webkit-overflow-scrolling: touch;
+  }
+  
+  .top-bar-item .value {
+    font-size: 12px;
+  }
+  
+  .top-bar-item .label {
+    font-size: 12px;
+  }
+  
+  /* 移动端隐藏左侧边栏，使用底部导航 */
+  .sider {
+    display: none;
+  }
+  
+  .content {
+    padding: 12px;
+    padding-bottom: 70px; /* 为底部导航留空间 */
+  }
+  
+  /* 小屏幕图表单列显示 */
+  .charts-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .top-bar-divider {
+    margin: 0 2px;
+  }
+  
+  /* 移动端底部导航栏 */
+  .mobile-nav {
+    display: flex !important;
+  }
+}
+
+@media (max-width: 576px) {
+  .top-bar {
+    gap: 4px;
+    padding: 0 8px;
+  }
+  
+  .top-bar-item {
+    gap: 2px;
+  }
+  
+  .top-bar-item.date {
+    display: none;
+  }
+  
+  .top-bar-divider {
+    display: none;
+  }
+  
+  .content {
+    padding: 8px;
+  }
+}

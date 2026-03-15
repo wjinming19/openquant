@@ -1,0 +1,30 @@
+# OpenQuant 后端依赖
+# Python 3.9+
+
+# Web框架
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+
+# 数据处理
+pandas==2.1.4
+numpy==1.26.3
+
+# HTTP请求
+requests==2.31.0
+
+# 数据库
+sqlalchemy==2.0.25
+
+# 数据验证
+pydantic==2.5.3
+
+# 安全
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+python-multipart==0.0.6
+
+# 工具
+python-dotenv==1.0.0
+
+# 可选：用于更严格的CORS
+# fastapi-cors

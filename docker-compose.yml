@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  backend:
+    build: ./backend
+    container_name: openquant-backend
+    ports:
+      - "8089:8089"
+    volumes:
+      - ./data:/app/data
+      - /root/.openclaw/workspace/scripts/dongfangcaifu-cookie.txt:/app/cookie.txt:ro
+    environment:
+      - DATABASE_URL=sqlite:///./data/openquant.db
+      - EASTMONEY_COOKIE_FILE=/app/cookie.txt
+    restart: unless-stopped
+    networks:
+      - openquant-net
+
+  frontend:
+    build: ./frontend
+    container_name: openquant-frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+    networks:
+      - openquant-net
+
+networks:
+  openquant-net:
+    driver: bridge
