@@ -84,9 +84,9 @@ const Market: React.FC<PageProps> = ({ darkMode, setDarkMode }) => {
       const res = await axios.get(`${API_BASE}/api/market/rankings`, {
         params: {
           type,
-          limit: 200
+          limit: 1000  // 获取更多股票
         },
-        timeout: 15000 // 15秒超时
+        timeout: 20000 // 20秒超时
       });
       
       if (res.data && Array.isArray(res.data.data)) {

@@ -41,7 +41,7 @@ async def get_market_sentiment():
 @router.get("/rankings")
 async def get_stock_rankings(
     type: str = Query("rise", description="排行类型: rise=涨幅, fall=跌幅, volume=成交量, turnover=换手率, fund=资金流向"),
-    limit: int = Query(50, ge=1, le=100, description="返回数量")
+    limit: int = Query(50, ge=1, le=5000, description="返回数量")
 ):
     """
     获取股票排行榜 - 使用Tushare全市场数据
