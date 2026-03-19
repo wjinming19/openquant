@@ -310,31 +310,51 @@ class DataFetcher:
     
     def get_stock_info(self, symbol: str) -> Optional[Dict]:
         """获取股票详细信息"""
+        # 尝试获取股票名称（从缓存或Tushare）
+        name = '-'
         try:
-            # 使用AKShare获取基本信息
+            # 构建ts_code（需要判断是沪市还是深市）
+            if symbol.startswith('6') or symbol.startswith('5') or symbol.startswith('9'):
+                ts_code = f"{symbol}.SH"
+            elif symbol.startswith('0') or symbol.startswith('3') or symbol.startswith('2'):
+                ts_code = f"{symbol}.SZ"
+            elif symbol.startswith('4') or symbol.startswith('8'):
+                ts_code = f"{symbol}.BJ"
+            else:
+                ts_code = symbol
+            
+            name = self._get_stock_name(ts_code)
+            if name == symbol:  # 如果没找到名称，使用symbol作为名称
+                name = symbol
+        except Exception as e:
+            print(f"获取股票名称失败: {e}")
+            name = symbol
+        
+        try:
+            # 使用AKShare获取其他信息
             stock_info = ak.stock_individual_info_em(symbol=symbol)
             if stock_info is not None and len(stock_info) > 0:
                 info_dict = dict(zip(stock_info['item'], stock_info['value']))
                 return {
                     'symbol': symbol,
-                    'name': info_dict.get('股票简称', '-'),
+                    'name': info_dict.get('股票简称', name),
                     'industry': info_dict.get('行业', '-'),
                     'market_cap': float(info_dict.get('总市值', 0)) if info_dict.get('总市值') else 0,
                     'pe': float(info_dict.get('市盈率', 0)) if info_dict.get('市盈率') else None,
                     'pb': float(info_dict.get('市净率', 0)) if info_dict.get('市净率') else None,
-                    'roe': None,  # AKShare不直接提供
+                    'roe': None,
                     'eps': None,
                     'bps': None,
                     'total_shares': float(info_dict.get('总股本', 0)) if info_dict.get('总股本') else 0,
                     'float_shares': float(info_dict.get('流通股', 0)) if info_dict.get('流通股') else 0
                 }
         except Exception as e:
-            print(f"获取股票信息失败: {e}")
+            print(f"AKShare获取股票信息失败: {e}")
         
-        # 返回基础信息
+        # 返回基础信息（至少包含名称）
         return {
             'symbol': symbol,
-            'name': '-',
+            'name': name,
             'industry': '-',
             'market_cap': 0,
             'pe': None,
