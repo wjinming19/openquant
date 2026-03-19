@@ -9,6 +9,7 @@ import Industry from './pages/Industry';
 import Market from './pages/Market';
 import Watchlist from './pages/Watchlist';
 import AIAnalysis from './pages/AIAnalysis';
+import StockDetail from './pages/StockDetail';
 import './App.css';
 
 // 受保护的路由组件
@@ -86,6 +87,14 @@ function App() {
             element={
               <ProtectedRoute>
                 <AIAnalysis darkMode={darkMode} setDarkMode={setDarkMode} />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/stock/:symbol" 
+            element={
+              <ProtectedRoute>
+                <StockDetail />
               </ProtectedRoute>
             } 
           />
