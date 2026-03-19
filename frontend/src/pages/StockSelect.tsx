@@ -1,16 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import { Layout, Menu, Card, Row, Col, Button, Select, Slider, Table, Tag, Badge, Typography, Space, Divider, Radio, Drawer, Tooltip, Popconfirm, message } from 'antd';
+import { Layout, Menu, Card, Row, Col, Button, Select, Slider, Table, Tag, Badge, Typography, Space, Divider, Radio, Drawer, Tooltip, Popconfirm, message, Statistic, Progress, List } from 'antd';
 import { useNavigate, useLocation } from 'react-router-dom';
 import ReactECharts from 'echarts-for-react';
 import axios from 'axios';
-import { DownloadOutlined, PlusOutlined, EyeOutlined, CloseOutlined } from '@ant-design/icons';
+import { DownloadOutlined, PlusOutlined, EyeOutlined, CloseOutlined, FileTextOutlined, ThunderboltOutlined, RiseOutlined, FallOutlined, StockOutlined, LineChartOutlined, BarChartOutlined } from '@ant-design/icons';
 import './Dashboard.css';
 
 const { Header, Content, Sider } = Layout;
 const { Title, Text } = Typography;
 const { Option } = Select;
 
-const API_BASE = 'http://170.106.119.80:8089/api';
+const API_BASE = 'http://170.106.119.80:8090/api';
 
 interface PageProps {
   darkMode: boolean;
@@ -41,6 +41,10 @@ interface StockData {
   rating: string;
   stars: string;
   signals: string[];
+  volume?: number;
+  ma5?: number;
+  ma10?: number;
+  ma20?: number;
 }
 
 const StockSelect: React.FC<PageProps> = ({ darkMode, setDarkMode }) => {
@@ -162,7 +166,33 @@ const StockSelect: React.FC<PageProps> = ({ darkMode, setDarkMode }) => {
     });
     setSortField('score');
     setSortOrder('descend');
-    // 重置后自动刷新
+    setTimeout(() => fetchScanResults(), 0);
+  };
+
+  // 快速筛选
+  const quickFilter = (type: string) => {
+    let newParams = { ...params };
+    switch (type) {
+      case 'macd_golden':
+        newParams = { ...newParams, macdSignal: 'golden', scoreMin: 0 };
+        break;
+      case 'ma_bull':
+        newParams = { ...newParams, maAlignment: 'bull', scoreMin: 0 };
+        break;
+      case 'rsi_oversold':
+        newParams = { ...newParams, rsiMin: 0, rsiMax: 30, bbPosition: 'lower' };
+        break;
+      case 'bb_lower':
+        newParams = { ...newParams, bbPosition: 'lower' };
+        break;
+      case 'strong_buy':
+        newParams = { ...newParams, scoreMin: 3, scoreMax: 5 };
+        break;
+      case 'breakout':
+        newParams = { ...newParams, macdSignal: 'golden', maAlignment: 'bull', scoreMin: 1 };
+        break;
+    }
+    setParams(newParams);
     setTimeout(() => fetchScanResults(), 0);
   };
 
@@ -174,7 +204,6 @@ const StockSelect: React.FC<PageProps> = ({ darkMode, setDarkMode }) => {
     }
     setSortField(field);
     setSortOrder(newOrder);
-    // 重新获取数据
     setTimeout(() => fetchScanResults(), 0);
   };
 
@@ -205,7 +234,35 @@ const StockSelect: React.FC<PageProps> = ({ darkMode, setDarkMode }) => {
     link.href = URL.createObjectURL(blob);
     link.download = `量化选股_${new Date().toISOString().split('T')[0]}.csv`;
     link.click();
-    message.success(`已导出 ${filteredResults.length} 条数据`);
+    message.success(`已导出 ${filteredResults.length} 条数据 (CSV)`);
+  };
+
+  // 导出JSON
+  const exportJSON = () => {
+    if (filteredResults.length === 0) {
+      message.warning('没有数据可导出');
+      return;
+    }
+
+    const exportData = {
+      exportTime: new Date().toISOString(),
+      filterParams: params,
+      totalCount: filteredResults.length,
+      statistics: {
+        avgChange: (filteredResults.reduce((sum, s) => sum + s.change_pct, 0) / filteredResults.length).toFixed(2),
+        avgScore: (filteredResults.reduce((sum, s) => sum + s.score, 0) / filteredResults.length).toFixed(2),
+        upCount: filteredResults.filter(s => s.change_pct > 0).length,
+        downCount: filteredResults.filter(s => s.change_pct < 0).length,
+      },
+      stocks: filteredResults
+    };
+
+    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `量化选股_${new Date().toISOString().split('T')[0]}.json`;
+    link.click();
+    message.success(`已导出 ${filteredResults.length} 条数据 (JSON)`);
   };
 
   // 打开详情抽屉
@@ -224,6 +281,24 @@ const StockSelect: React.FC<PageProps> = ({ darkMode, setDarkMode }) => {
     return sortOrder === 'descend' ? '↓' : '↑';
   };
 
+  // 涨跌幅颜色类
+  const getChangeClass = (change: number) => {
+    if (change > 0) return 'value up';
+    if (change < 0) return 'value down';
+    return 'value';
+  };
+
+  // 涨跌幅背景色
+  const getChangeBgColor = (change: number, opacity = 0.1) => {
+    if (change >= 5) return `rgba(245, 34, 45, ${opacity})`;
+    if (change >= 2) return `rgba(250, 140, 22, ${opacity})`;
+    if (change > 0) return `rgba(82, 196, 26, ${opacity})`;
+    if (change <= -5) return `rgba(82, 196, 26, ${opacity * 2})`;
+    if (change <= -2) return `rgba(24, 144, 255, ${opacity})`;
+    if (change < 0) return `rgba(82, 196, 26, ${opacity})`;
+    return 'transparent';
+  };
+
   // 表格列定义
   const columns = [
     {
@@ -232,25 +307,34 @@ const StockSelect: React.FC<PageProps> = ({ darkMode, setDarkMode }) => {
       width: 60,
       fixed: 'left' as const,
       render: (_: any, __: any, index: number) => (
-        <span style={{ 
-          color: index < 3 ? '#f5222d' : index < 10 ? '#fa8c16' : '#999',
-          fontWeight: index < 3 ? 'bold' : 'normal'
+        <div style={{
+          width: 28,
+          height: 28,
+          borderRadius: '50%',
+          background: index < 3 ? 'linear-gradient(135deg, #ff4d4f, #ff7875)' : index < 10 ? 'linear-gradient(135deg, #ffa940, #ffc53d)' : '#f5f5f5',
+          color: index < 10 ? '#fff' : '#999',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontWeight: 'bold',
+          fontSize: 13,
+          boxShadow: index < 3 ? '0 2px 8px rgba(255, 77, 79, 0.4)' : 'none'
         }}>
           {index + 1}
-        </span>
+        </div>
       )
     },
     {
       title: '代码/名称',
       dataIndex: 'symbol',
-      width: 120,
+      width: 130,
       fixed: 'left' as const,
       render: (symbol: string, record: StockData) => (
         <Space direction="vertical" size={0}>
-          <Text strong style={{ cursor: 'pointer', color: '#1890ff' }} onClick={() => openDetailDrawer(record)}>
+          <Text strong style={{ cursor: 'pointer', color: '#1890ff', fontSize: 14 }} onClick={() => openDetailDrawer(record)}>
             {record.name}
           </Text>
-          <Text type="secondary" style={{ fontSize: 12 }}>{symbol}</Text>
+          <Text type="secondary" style={{ fontSize: 11 }}>{symbol}</Text>
         </Space>
       )
     },
@@ -261,9 +345,11 @@ const StockSelect: React.FC<PageProps> = ({ darkMode, setDarkMode }) => {
         </span>
       ),
       dataIndex: 'price',
-      width: 90,
+      width: 85,
       align: 'right' as const,
-      render: (price: number) => <Text>¥{price?.toFixed(2)}</Text>
+      render: (price: number, record: StockData) => (
+        <Text strong style={{ fontSize: 13 }}>¥{price?.toFixed(2)}</Text>
+      )
     },
     {
       title: (
@@ -275,8 +361,15 @@ const StockSelect: React.FC<PageProps> = ({ darkMode, setDarkMode }) => {
       width: 90,
       align: 'right' as const,
       render: (change: number) => (
-        <span className={change >= 0 ? 'value up' : 'value down'}>
-          {change >= 0 ? '+' : ''}{change?.toFixed(2)}%
+        <span style={{
+          padding: '2px 8px',
+          borderRadius: 4,
+          fontWeight: 'bold',
+          fontSize: 13,
+          backgroundColor: getChangeBgColor(change, 0.12),
+          color: change > 0 ? '#cf1322' : change < 0 ? '#389e0d' : '#666'
+        }}>
+          {change > 0 ? '+' : ''}{change?.toFixed(2)}%
         </span>
       )
     },
@@ -294,40 +387,82 @@ const StockSelect: React.FC<PageProps> = ({ darkMode, setDarkMode }) => {
         if (rsi > 70) color = '#f5222d';
         else if (rsi > 50) color = '#fa8c16';
         else if (rsi < 30) color = '#1890ff';
-        return <span style={{ color, fontWeight: 'bold' }}>{rsi?.toFixed(1)}</span>;
+        return (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Progress
+              type="circle"
+              percent={Math.round(rsi)}
+              width={35}
+              strokeWidth={8}
+              strokeColor={color}
+              format={(percent) => <span style={{ fontSize: 10, color, fontWeight: 'bold' }}>{percent}</span>}
+            />
+          </div>
+        );
       }
     },
     {
-      title: 'MACD信号',
+      title: 'MACD',
       dataIndex: 'macd_signal',
-      width: 90,
+      width: 75,
       align: 'center' as const,
       render: (signal: string) => {
-        const color = signal === '金叉' ? '#f5222d' : signal === '死叉' ? '#52c41a' : '#999';
-        return <Tag color={color === '#f5222d' ? 'red' : color === '#52c41a' ? 'green' : 'default'}>{signal}</Tag>;
+        const isGolden = signal === '金叉';
+        const isDead = signal === '死叉';
+        return (
+          <Tag 
+            style={{ 
+              fontSize: 11, 
+              padding: '0 6px',
+              backgroundColor: isGolden ? '#fff1f0' : isDead ? '#f6ffed' : '#f5f5f5',
+              borderColor: isGolden ? '#ff4d4f' : isDead ? '#52c41a' : '#d9d9d9',
+              color: isGolden ? '#cf1322' : isDead ? '#389e0d' : '#666'
+            }}
+          >
+            {signal}
+          </Tag>
+        );
       }
     },
     {
-      title: '均线趋势',
+      title: '均线',
       dataIndex: 'ma_trend',
-      width: 90,
+      width: 85,
       align: 'center' as const,
       render: (trend: string) => {
-        const color = trend === '多头排列' ? '#f5222d' : trend === '空头排列' ? '#52c41a' : '#999';
-        return <Tag color={color === '#f5222d' ? 'red' : color === '#52c41a' ? 'green' : 'default'}>{trend}</Tag>;
+        const isBull = trend === '多头排列';
+        const isBear = trend === '空头排列';
+        return (
+          <Tag 
+            style={{ 
+              fontSize: 11, 
+              padding: '0 6px',
+              backgroundColor: isBull ? '#fff1f0' : isBear ? '#f6ffed' : '#f5f5f5',
+              borderColor: isBull ? '#ff4d4f' : isBear ? '#52c41a' : '#d9d9d9',
+              color: isBull ? '#cf1322' : isBear ? '#389e0d' : '#666'
+            }}
+          >
+            {trend}
+          </Tag>
+        );
       }
     },
     {
       title: '布林带',
       dataIndex: 'bb_position_detail',
-      width: 90,
+      width: 85,
       align: 'center' as const,
       render: (pos: string) => {
-        let color = 'default';
-        if (pos.includes('上轨')) color = 'red';
-        else if (pos.includes('下轨')) color = 'green';
-        else color = 'blue';
-        return <Tag color={color}>{pos}</Tag>;
+        let color = '#d9d9d9';
+        let bgColor = '#f5f5f5';
+        if (pos?.includes('上轨')) { color = '#cf1322'; bgColor = '#fff1f0'; }
+        else if (pos?.includes('下轨')) { color = '#389e0d'; bgColor = '#f6ffed'; }
+        else { color = '#096dd9'; bgColor = '#e6f7ff'; }
+        return (
+          <Tag style={{ fontSize: 11, padding: '0 6px', backgroundColor: bgColor, borderColor: color, color }}>
+            {pos}
+          </Tag>
+        );
       }
     },
     {
@@ -337,52 +472,68 @@ const StockSelect: React.FC<PageProps> = ({ darkMode, setDarkMode }) => {
         </span>
       ),
       dataIndex: 'score',
-      width: 80,
+      width: 75,
       align: 'center' as const,
       render: (score: number) => {
         let color = '#999';
-        if (score >= 3) color = '#52c41a';
-        else if (score >= 1) color = '#95de64';
-        else if (score >= 0) color = '#faad14';
-        else if (score >= -1) color = '#ff7875';
-        else color = '#f5222d';
+        let bgColor = '#f5f5f5';
+        if (score >= 3) { color = '#52c41a'; bgColor = '#f6ffed'; }
+        else if (score >= 1) { color = '#95de64'; bgColor = '#f6ffed'; }
+        else if (score >= 0) { color = '#faad14'; bgColor = '#fffbe6'; }
+        else if (score >= -1) { color = '#ff7875'; bgColor = '#fff1f0'; }
+        else { color = '#f5222d'; bgColor = '#fff1f0'; }
         return (
-          <Badge 
-            count={score?.toFixed(1)} 
-            style={{ 
-              backgroundColor: color,
-              fontSize: 12,
-              minWidth: 40
-            }} 
-          />
+          <span style={{
+            display: 'inline-block',
+            padding: '2px 10px',
+            borderRadius: 12,
+            backgroundColor: bgColor,
+            color: color,
+            fontWeight: 'bold',
+            fontSize: 13,
+            border: `1px solid ${color}`,
+          }}>
+            {score?.toFixed(1)}
+          </span>
         );
       }
     },
     {
       title: '评级',
       dataIndex: 'rating',
-      width: 100,
+      width: 110,
       align: 'center' as const,
       render: (rating: string, record: StockData) => (
-        <Space>
-          <Text>{record.stars}</Text>
-          <Tag color={record.score >= 0 ? 'green' : 'red'}>{rating}</Tag>
+        <Space size={4}>
+          <span style={{ fontSize: 14 }}>{record.stars}</span>
+          <Tag 
+            style={{ 
+              fontSize: 11,
+              padding: '0 4px',
+              backgroundColor: record.score >= 0 ? '#f6ffed' : '#fff1f0',
+              borderColor: record.score >= 0 ? '#52c41a' : '#ff4d4f',
+              color: record.score >= 0 ? '#389e0d' : '#cf1322'
+            }}
+          >
+            {rating}
+          </Tag>
         </Space>
       )
     },
     {
       title: '操作',
       key: 'action',
-      width: 120,
+      width: 100,
       fixed: 'right' as const,
       render: (_: any, record: StockData) => (
-        <Space size="small">
+        <Space size={0}>
           <Tooltip title="查看详情">
             <Button 
               type="text" 
               size="small" 
               icon={<EyeOutlined />} 
               onClick={() => openDetailDrawer(record)}
+              style={{ color: '#1890ff' }}
             />
           </Tooltip>
           <Tooltip title="加入自选">
@@ -392,6 +543,7 @@ const StockSelect: React.FC<PageProps> = ({ darkMode, setDarkMode }) => {
               icon={<PlusOutlined />} 
               onClick={() => addToWatchlist(record)}
               disabled={watchlist.includes(record.symbol)}
+              style={{ color: watchlist.includes(record.symbol) ? '#999' : '#52c41a' }}
             />
           </Tooltip>
         </Space>
@@ -432,11 +584,129 @@ const StockSelect: React.FC<PageProps> = ({ darkMode, setDarkMode }) => {
           color: (params: any) => {
             const colors = ['#f5222d', '#ff7875', '#ffa39e', '#d9f7be', '#95de64', '#52c41a'];
             return colors[params.dataIndex];
-          }
+          },
+          borderRadius: [4, 4, 0, 0]
         }
       }]
     };
   };
+
+  // K线缩略图配置
+  const getMiniKLineOption = (stock: StockData | null) => {
+    if (!stock) return {};
+    
+    // 模拟生成一些K线数据（实际应用中应该从API获取）
+    const days = 30;
+    const dates: string[] = [];
+    const data: number[][] = [];
+    let basePrice = stock.price;
+    
+    for (let i = days - 1; i >= 0; i--) {
+      const date = new Date();
+      date.setDate(date.getDate() - i);
+      dates.push(date.toISOString().split('T')[0].slice(5));
+      
+      const open = basePrice * (1 + (Math.random() - 0.5) * 0.04);
+      const close = basePrice * (1 + (Math.random() - 0.5) * 0.04);
+      const low = Math.min(open, close) * (1 - Math.random() * 0.02);
+      const high = Math.max(open, close) * (1 + Math.random() * 0.02);
+      data.push([parseFloat(open.toFixed(2)), parseFloat(close.toFixed(2)), parseFloat(low.toFixed(2)), parseFloat(high.toFixed(2))]);
+    }
+
+    return {
+      backgroundColor: 'transparent',
+      grid: { left: '8%', right: '5%', top: '10%', bottom: '15%' },
+      xAxis: {
+        type: 'category',
+        data: dates,
+        axisLabel: { color: darkMode ? '#999' : '#666', fontSize: 9 },
+        axisLine: { show: false }
+      },
+      yAxis: {
+        type: 'value',
+        scale: true,
+        axisLabel: { color: darkMode ? '#999' : '#666', fontSize: 9 },
+        splitLine: { lineStyle: { color: darkMode ? '#333' : '#f0f0f0' } }
+      },
+      series: [{
+        type: 'candlestick',
+        data: data,
+        itemStyle: {
+          color: '#f5222d',
+          color0: '#52c41a',
+          borderColor: '#f5222d',
+          borderColor0: '#52c41a'
+        }
+      }]
+    };
+  };
+
+  // 技术指标雷达图
+  const getTechRadarOption = (stock: StockData | null) => {
+    if (!stock) return {};
+    
+    return {
+      backgroundColor: 'transparent',
+      radar: {
+        indicator: [
+          { name: '趋势强度', max: 100 },
+          { name: '动量', max: 100 },
+          { name: '波动性', max: 100 },
+          { name: '成交量', max: 100 },
+          { name: '资金流入', max: 100 },
+        ],
+        radius: '65%',
+        axisName: {
+          color: darkMode ? '#999' : '#666',
+          fontSize: 10
+        },
+        splitArea: {
+          areaStyle: {
+            color: ['rgba(24, 144, 255, 0.05)', 'rgba(24, 144, 255, 0.1)', 
+                    'rgba(24, 144, 255, 0.15)', 'rgba(24, 144, 255, 0.2)']
+          }
+        }
+      },
+      series: [{
+        type: 'radar',
+        data: [{
+          value: [
+            Math.max(0, Math.min(100, (stock.score + 5) * 10)),
+            Math.max(0, Math.min(100, stock.rsi)),
+            Math.max(0, Math.min(100, (stock.bb_position || 0.5) * 100)),
+            70,
+            Math.max(0, Math.min(100, (stock.change_pct + 10) * 5))
+          ],
+          name: '技术指标',
+          areaStyle: {
+            color: stock.score >= 0 ? 'rgba(82, 196, 26, 0.3)' : 'rgba(245, 34, 45, 0.3)'
+          },
+          lineStyle: {
+            color: stock.score >= 0 ? '#52c41a' : '#f5222d'
+          },
+          itemStyle: {
+            color: stock.score >= 0 ? '#52c41a' : '#f5222d'
+          }
+        }]
+      }]
+    };
+  };
+
+  // 统计信息
+  const getStatistics = () => {
+    if (filteredResults.length === 0) return null;
+    
+    const avgChange = filteredResults.reduce((sum, s) => sum + s.change_pct, 0) / filteredResults.length;
+    const avgScore = filteredResults.reduce((sum, s) => sum + s.score, 0) / filteredResults.length;
+    const upCount = filteredResults.filter(s => s.change_pct > 0).length;
+    const downCount = filteredResults.filter(s => s.change_pct < 0).length;
+    const strongBuyCount = filteredResults.filter(s => s.score >= 3).length;
+    const strongSellCount = filteredResults.filter(s => s.score <= -3).length;
+    
+    return { avgChange, avgScore, upCount, downCount, strongBuyCount, strongSellCount };
+  };
+
+  const stats = getStatistics();
 
   return (
     <Layout className={`dashboard ${darkMode ? 'dark' : 'light'}`}>
@@ -458,102 +728,223 @@ const StockSelect: React.FC<PageProps> = ({ darkMode, setDarkMode }) => {
           />
         </Sider>
         
-        <Content className="content">
-          <Title level={4} style={{ marginBottom: 16 }}>🔍 量化因子选股</Title>
+        <Content className="content" style={{ padding: '16px' }}>
+          <Row justify="space-between" align="middle" style={{ marginBottom: 16 }}>
+            <Col>
+              <Title level={4} style={{ margin: 0 }}>🔍 量化因子选股</Title>
+            </Col>
+            <Col>
+              <Space>
+                <Button 
+                  type="dashed" 
+                  icon={<DownloadOutlined />} 
+                  onClick={exportCSV}
+                  disabled={filteredResults.length === 0}
+                  size="small"
+                >
+                  导出CSV
+                </Button>
+                <Button 
+                  type="dashed" 
+                  icon={<FileTextOutlined />} 
+                  onClick={exportJSON}
+                  disabled={filteredResults.length === 0}
+                  size="small"
+                >
+                  导出JSON
+                </Button>
+              </Space>
+            </Col>
+          </Row>
           
-          {/* 筛选条件区域 */}
-          <Card title="筛选条件" size="small" style={{ marginBottom: 16 }}>
-            <Row gutter={[24, 16]}>
-              <Col xs={24} sm={12} md={8} lg={6}>
-                <div style={{ marginBottom: 8 }}>
-                  <Text strong>RSI范围 [{params.rsiMin} - {params.rsiMax}]</Text>
-                  <Slider
-                    range
-                    min={0}
-                    max={100}
-                    value={[params.rsiMin, params.rsiMax]}
-                    onChange={(val) => setParams({...params, rsiMin: val[0], rsiMax: val[1]})}
-                  />
-                </div>
+          {/* 筛选条件区域 - 紧凑卡片设计 */}
+          <Card 
+            size="small" 
+            style={{ marginBottom: 16 }}
+            bodyStyle={{ padding: '12px 16px' }}
+          >
+            <Row gutter={[16, 8]} align="middle">
+              <Col xs={24} lg={18}>
+                <Row gutter={[16, 12]}>
+                  <Col xs={12} sm={8} md={6} lg={5}>
+                    <div>
+                      <Text style={{ fontSize: 12, color: '#666' }}>RSI范围 [{params.rsiMin}-{params.rsiMax}]</Text>
+                      <Slider
+                        range
+                        min={0}
+                        max={100}
+                        value={[params.rsiMin, params.rsiMax]}
+                        onChange={(val) => setParams({...params, rsiMin: val[0], rsiMax: val[1]})}
+                        style={{ margin: '4px 0 0' }}
+                      />
+                    </div>
+                  </Col>
+                  <Col xs={12} sm={8} md={6} lg={4}>
+                    <div>
+                      <Text style={{ fontSize: 12, color: '#666' }}>MACD信号</Text>
+                      <Select
+                        value={params.macdSignal}
+                        onChange={(val) => setParams({...params, macdSignal: val})}
+                        style={{ width: '100%', marginTop: 4 }}
+                        size="small"
+                        options={[
+                          { label: '全部', value: 'all' },
+                          { label: '金叉', value: 'golden' },
+                          { label: '死叉', value: 'dead' },
+                        ]}
+                      />
+                    </div>
+                  </Col>
+                  <Col xs={12} sm={8} md={6} lg={4}>
+                    <div>
+                      <Text style={{ fontSize: 12, color: '#666' }}>均线排列</Text>
+                      <Select
+                        value={params.maAlignment}
+                        onChange={(val) => setParams({...params, maAlignment: val})}
+                        style={{ width: '100%', marginTop: 4 }}
+                        size="small"
+                        options={[
+                          { label: '全部', value: 'all' },
+                          { label: '多头排列', value: 'bull' },
+                          { label: '空头排列', value: 'bear' },
+                        ]}
+                      />
+                    </div>
+                  </Col>
+                  <Col xs={12} sm={8} md={6} lg={4}>
+                    <div>
+                      <Text style={{ fontSize: 12, color: '#666' }}>布林带位置</Text>
+                      <Select
+                        value={params.bbPosition}
+                        onChange={(val) => setParams({...params, bbPosition: val})}
+                        style={{ width: '100%', marginTop: 4 }}
+                        size="small"
+                        options={[
+                          { label: '全部', value: 'all' },
+                          { label: '上轨附近', value: 'upper' },
+                          { label: '中轨附近', value: 'middle' },
+                          { label: '下轨附近', value: 'lower' },
+                        ]}
+                      />
+                    </div>
+                  </Col>
+                  <Col xs={12} sm={8} md={6} lg={5}>
+                    <div>
+                      <Text style={{ fontSize: 12, color: '#666' }}>综合评分 [{params.scoreMin} - {params.scoreMax}]</Text>
+                      <Slider
+                        range
+                        min={-5}
+                        max={5}
+                        step={0.5}
+                        value={[params.scoreMin, params.scoreMax]}
+                        onChange={(val) => setParams({...params, scoreMin: val[0], scoreMax: val[1]})}
+                        style={{ margin: '4px 0 0' }}
+                      />
+                    </div>
+                  </Col>
+                  <Col xs={12} sm={8} md={6} lg={2}>
+                    <Space direction="vertical" size={4} style={{ width: '100%' }}>
+                      <Button type="primary" size="small" block onClick={applyFilter} icon={<ThunderboltOutlined />}>
+                        筛选
+                      </Button>
+                      <Button size="small" block onClick={resetFilter}>
+                        重置
+                      </Button>
+                    </Space>
+                  </Col>
+                </Row>
               </Col>
-              <Col xs={24} sm={12} md={8} lg={6}>
-                <div style={{ marginBottom: 8 }}>
-                  <Text strong>MACD信号</Text>
-                  <Select
-                    value={params.macdSignal}
-                    onChange={(val) => setParams({...params, macdSignal: val})}
-                    style={{ width: '100%' }}
-                    options={[
-                      { label: '全部', value: 'all' },
-                      { label: '金叉', value: 'golden' },
-                      { label: '死叉', value: 'dead' },
-                    ]}
-                  />
-                </div>
-              </Col>
-              <Col xs={24} sm={12} md={8} lg={6}>
-                <div style={{ marginBottom: 8 }}>
-                  <Text strong>均线排列</Text>
-                  <Select
-                    value={params.maAlignment}
-                    onChange={(val) => setParams({...params, maAlignment: val})}
-                    style={{ width: '100%' }}
-                    options={[
-                      { label: '全部', value: 'all' },
-                      { label: '多头排列', value: 'bull' },
-                      { label: '空头排列', value: 'bear' },
-                    ]}
-                  />
-                </div>
-              </Col>
-              <Col xs={24} sm={12} md={8} lg={6}>
-                <div style={{ marginBottom: 8 }}>
-                  <Text strong>布林带位置</Text>
-                  <Select
-                    value={params.bbPosition}
-                    onChange={(val) => setParams({...params, bbPosition: val})}
-                    style={{ width: '100%' }}
-                    options={[
-                      { label: '全部', value: 'all' },
-                      { label: '上轨附近', value: 'upper' },
-                      { label: '中轨附近', value: 'middle' },
-                      { label: '下轨附近', value: 'lower' },
-                    ]}
-                  />
-                </div>
-              </Col>
-              <Col xs={24} sm={12} md={8} lg={6}>
-                <div style={{ marginBottom: 8 }}>
-                  <Text strong>综合评分 [{params.scoreMin} - {params.scoreMax}]</Text>
-                  <Slider
-                    range
-                    min={-5}
-                    max={5}
-                    step={0.5}
-                    value={[params.scoreMin, params.scoreMax]}
-                    onChange={(val) => setParams({...params, scoreMin: val[0], scoreMax: val[1]})}
-                  />
-                </div>
-              </Col>
-            </Row>
-            <Row style={{ marginTop: 8 }}>
-              <Col span={24}>
-                <Space>
-                  <Button type="primary" onClick={applyFilter}>应用筛选</Button>
-                  <Button onClick={resetFilter}>重置</Button>
-                  <Button onClick={fetchScanResults} loading={loading}>刷新数据</Button>
-                  <Button 
-                    type="dashed" 
-                    icon={<DownloadOutlined />} 
-                    onClick={exportCSV}
-                    disabled={filteredResults.length === 0}
-                  >
-                    导出CSV
-                  </Button>
-                </Space>
+              <Col xs={24} lg={6}>
+                <Card size="small" style={{ background: '#f6ffed', border: '1px solid #b7eb8f' }} bodyStyle={{ padding: 8 }}>
+                  <Text style={{ fontSize: 12, color: '#52c41a', fontWeight: 'bold' }}>
+                    <ThunderboltOutlined /> 快速筛选
+                  </Text>
+                  <div style={{ marginTop: 6 }}>
+                    <Space wrap size={4}>
+                      <Button size="small" onClick={() => quickFilter('macd_golden')} style={{ fontSize: 11 }}>
+                        MACD金叉
+                      </Button>
+                      <Button size="small" onClick={() => quickFilter('ma_bull')} style={{ fontSize: 11 }}>
+                        均线多头
+                      </Button>
+                      <Button size="small" onClick={() => quickFilter('rsi_oversold')} style={{ fontSize: 11 }}>
+                        RSI超卖
+                      </Button>
+                      <Button size="small" onClick={() => quickFilter('bb_lower')} style={{ fontSize: 11 }}>
+                        布林下轨
+                      </Button>
+                      <Button size="small" type="primary" danger onClick={() => quickFilter('strong_buy')} style={{ fontSize: 11 }}>
+                        强烈看多
+                      </Button>
+                      <Button size="small" type="primary" onClick={() => quickFilter('breakout')} style={{ fontSize: 11 }}>
+                        突破信号
+                      </Button>
+                    </Space>
+                  </div>
+                </Card>
               </Col>
             </Row>
           </Card>
+
+          {/* 统计信息区域 */}
+          {stats && (
+            <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+              <Col xs={12} sm={6}>
+                <Card size="small" bodyStyle={{ padding: 12 }}>
+                  <Statistic 
+                    title="选股结果" 
+                    value={filteredResults.length} 
+                    suffix="只"
+                    valueStyle={{ color: '#1890ff', fontSize: 20 }}
+                  />
+                </Card>
+              </Col>
+              <Col xs={12} sm={6}>
+                <Card size="small" bodyStyle={{ padding: 12 }}>
+                  <Statistic 
+                    title="平均涨跌幅" 
+                    value={stats.avgChange} 
+                    suffix="%"
+                    precision={2}
+                    valueStyle={{ color: stats.avgChange >= 0 ? '#cf1322' : '#389e0d', fontSize: 20 }}
+                    prefix={stats.avgChange >= 0 ? <RiseOutlined /> : <FallOutlined />}
+                  />
+                </Card>
+              </Col>
+              <Col xs={12} sm={6}>
+                <Card size="small" bodyStyle={{ padding: 12 }}>
+                  <Statistic 
+                    title="平均评分" 
+                    value={stats.avgScore} 
+                    precision={2}
+                    valueStyle={{ color: stats.avgScore >= 0 ? '#52c41a' : '#f5222d', fontSize: 20 }}
+                  />
+                </Card>
+              </Col>
+              <Col xs={12} sm={6}>
+                <Card size="small" bodyStyle={{ padding: 12 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <div style={{ fontSize: 12, color: '#666' }}>涨跌分布</div>
+                      <div style={{ fontSize: 20, fontWeight: 'bold' }}>
+                        <span style={{ color: '#cf1322' }}>{stats.upCount}</span>
+                        <span style={{ color: '#999', margin: '0 4px' }}>/</span>
+                        <span style={{ color: '#389e0d' }}>{stats.downCount}</span>
+                      </div>
+                    </div>
+                    <Progress
+                      type="circle"
+                      percent={Math.round((stats.upCount / filteredResults.length) * 100)}
+                      width={45}
+                      strokeWidth={10}
+                      strokeColor="#52c41a"
+                      format={(p) => <span style={{ fontSize: 10 }}>{p}%</span>}
+                    />
+                  </div>
+                </Card>
+              </Col>
+            </Row>
+          )}
 
           <Row gutter={[16, 16]}>
             <Col xs={24} lg={18}>
@@ -562,56 +953,83 @@ const StockSelect: React.FC<PageProps> = ({ darkMode, setDarkMode }) => {
                 title={`筛选结果 (${filteredResults.length}只)`} 
                 size="small"
                 bodyStyle={{ padding: 0 }}
+                extra={
+                  <Space size={4}>
+                    <Button type="link" size="small" onClick={fetchScanResults} loading={loading}>
+                      刷新数据
+                    </Button>
+                  </Space>
+                }
               >
                 <Table
                   dataSource={filteredResults}
                   columns={columns}
                   rowKey="symbol"
-                  pagination={{ pageSize: 10, showSizeChanger: true, showTotal: (total) => `共 ${total} 条` }}
+                  pagination={{ 
+                    pageSize: 10, 
+                    showSizeChanger: true, 
+                    showTotal: (total) => `共 ${total} 条`,
+                    size: 'small'
+                  }}
                   size="small"
                   scroll={{ x: 1000 }}
                   loading={loading}
+                  rowClassName={(record) => record.change_pct >= 5 ? 'highlight-row' : ''}
                 />
               </Card>
             </Col>
             <Col xs={24} lg={6}>
               {/* 评分分布图 */}
-              <Card title="数据分布" size="small">
+              <Card title="评分分布" size="small" style={{ marginBottom: 16 }}>
                 <ReactECharts
                   option={getScoreDistOption()}
-                  style={{ height: 200 }}
+                  style={{ height: 160 }}
                   theme={darkMode ? 'dark' : undefined}
                 />
-                <Divider />
-                <div style={{ textAlign: 'center' }}>
-                  <Text type="secondary">总计 {scanResults.length} 只股票</Text>
-                </div>
-                <div style={{ marginTop: 12 }}>
-                  <Text strong style={{ fontSize: 12 }}>评分说明:</Text>
-                  <div style={{ fontSize: 11, marginTop: 4, color: darkMode ? '#999' : '#666' }}>
-                    <div>⭐⭐⭐⭐⭐ 强烈看多 (≥3分)</div>
-                    <div>⭐⭐⭐⭐ 看多 (1.5~3分)</div>
-                    <div>⭐⭐⭐ 中性 (0~1.5分)</div>
-                    <div>⭐⭐ 看空 (-1.5~0分)</div>
-                    <div>⭐ 强烈看空 (&lt;-1.5分)</div>
-                  </div>
-                </div>
+              </Card>
+              
+              {/* 评级说明 */}
+              <Card size="small" title="评级说明" bodyStyle={{ padding: 12 }}>
+                <List
+                  size="small"
+                  dataSource={[
+                    { stars: '⭐⭐⭐⭐⭐', range: '≥3分', desc: '强烈看多', color: '#52c41a' },
+                    { stars: '⭐⭐⭐⭐', range: '1.5~3分', desc: '看多', color: '#95de64' },
+                    { stars: '⭐⭐⭐', range: '0~1.5分', desc: '中性', color: '#faad14' },
+                    { stars: '⭐⭐', range: '-1.5~0分', desc: '看空', color: '#ff7875' },
+                    { stars: '⭐', range: '<-1.5分', desc: '强烈看空', color: '#f5222d' },
+                  ]}
+                  renderItem={(item) => (
+                    <List.Item style={{ padding: '4px 0', border: 'none' }}>
+                      <Space>
+                        <span>{item.stars}</span>
+                        <Text type="secondary" style={{ fontSize: 11 }}>{item.range}</Text>
+                        <Tag color={item.color} style={{ fontSize: 10, margin: 0 }}>{item.desc}</Tag>
+                      </Space>
+                    </List.Item>
+                  )}
+                />
               </Card>
             </Col>
           </Row>
         </Content>
       </Layout>
 
-      {/* 股票详情抽屉 */}
+      {/* 股票详情抽屉 - 增强版 */}
       <Drawer
         title={
-          <Space>
-            <span>{selectedStock?.name}</span>
-            <Text type="secondary">{selectedStock?.symbol}</Text>
-          </Space>
+          selectedStock && (
+            <Space>
+              <span style={{ fontSize: 18, fontWeight: 'bold' }}>{selectedStock.name}</span>
+              <Text type="secondary">{selectedStock.symbol}</Text>
+              <Tag color={selectedStock.score >= 0 ? 'green' : 'red'}>
+                {selectedStock.rating}
+              </Tag>
+            </Space>
+          )
         }
         placement="right"
-        width={500}
+        width={560}
         onClose={() => setDrawerVisible(false)}
         open={drawerVisible}
         extra={
@@ -620,10 +1038,11 @@ const StockSelect: React.FC<PageProps> = ({ darkMode, setDarkMode }) => {
               icon={<PlusOutlined />}
               onClick={() => selectedStock && addToWatchlist(selectedStock)}
               disabled={selectedStock ? watchlist.includes(selectedStock.symbol) : true}
+              size="small"
             >
               加入自选
             </Button>
-            <Button type="primary" onClick={() => selectedStock && navigate(`/dashboard?symbol=${selectedStock.symbol}`)}>
+            <Button type="primary" size="small" onClick={() => selectedStock && navigate(`/dashboard?symbol=${selectedStock.symbol}`)}>
               详细分析
             </Button>
           </Space>
@@ -631,84 +1050,137 @@ const StockSelect: React.FC<PageProps> = ({ darkMode, setDarkMode }) => {
       >
         {selectedStock && (
           <div>
-            <Card size="small" title="基本信息" style={{ marginBottom: 16 }}>
-              <Row gutter={[16, 8]}>
-                <Col span={12}>
-                  <Text type="secondary">最新价:</Text>
-                  <div style={{ fontSize: 18, fontWeight: 'bold' }}>¥{selectedStock.price?.toFixed(2)}</div>
-                </Col>
-                <Col span={12}>
-                  <Text type="secondary">涨跌幅:</Text>
-                  <div style={{ 
-                    fontSize: 18, 
-                    fontWeight: 'bold',
-                    color: selectedStock.change_pct >= 0 ? '#f5222d' : '#52c41a'
-                  }}>
-                    {selectedStock.change_pct >= 0 ? '+' : ''}{selectedStock.change_pct?.toFixed(2)}%
-                  </div>
-                </Col>
-              </Row>
-            </Card>
-
-            <Card size="small" title="技术指标" style={{ marginBottom: 16 }}>
-              <Row gutter={[16, 16]}>
-                <Col span={12}>
-                  <div style={{ marginBottom: 8 }}>
-                    <Text type="secondary">RSI指标:</Text>
-                    <div style={{ fontSize: 16, fontWeight: 'bold', color: selectedStock.rsi > 70 ? '#f5222d' : selectedStock.rsi < 30 ? '#1890ff' : '#52c41a' }}>
-                      {selectedStock.rsi?.toFixed(1)}
+            {/* 价格概览 */}
+            <Card size="small" style={{ marginBottom: 12, background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }} bodyStyle={{ padding: 16 }}>
+              <Row gutter={16}>
+                <Col span={8}>
+                  <div style={{ textAlign: 'center' }}>
+                    <Text style={{ color: 'rgba(255,255,255,0.8)', fontSize: 12 }}>最新价</Text>
+                    <div style={{ fontSize: 24, fontWeight: 'bold', color: '#fff' }}>
+                      ¥{selectedStock.price?.toFixed(2)}
                     </div>
                   </div>
                 </Col>
-                <Col span={12}>
-                  <div style={{ marginBottom: 8 }}>
-                    <Text type="secondary">MACD信号:</Text>
-                    <div>
-                      <Tag color={selectedStock.macd_signal === '金叉' ? 'red' : selectedStock.macd_signal === '死叉' ? 'green' : 'default'}>
-                        {selectedStock.macd_signal}
-                      </Tag>
+                <Col span={8}>
+                  <div style={{ textAlign: 'center' }}>
+                    <Text style={{ color: 'rgba(255,255,255,0.8)', fontSize: 12 }}>涨跌幅</Text>
+                    <div style={{ 
+                      fontSize: 24, 
+                      fontWeight: 'bold',
+                      color: selectedStock.change_pct >= 0 ? '#ffccc7' : '#b7eb8f'
+                    }}>
+                      {selectedStock.change_pct >= 0 ? '+' : ''}{selectedStock.change_pct?.toFixed(2)}%
                     </div>
                   </div>
                 </Col>
-                <Col span={12}>
-                  <div style={{ marginBottom: 8 }}>
-                    <Text type="secondary">均线趋势:</Text>
-                    <div>
-                      <Tag color={selectedStock.ma_trend === '多头排列' ? 'red' : selectedStock.ma_trend === '空头排列' ? 'green' : 'default'}>
-                        {selectedStock.ma_trend}
-                      </Tag>
-                    </div>
-                  </div>
-                </Col>
-                <Col span={12}>
-                  <div style={{ marginBottom: 8 }}>
-                    <Text type="secondary">布林带位置:</Text>
-                    <div>
-                      <Tag color={selectedStock.bb_position_detail?.includes('上轨') ? 'red' : selectedStock.bb_position_detail?.includes('下轨') ? 'green' : 'blue'}>
-                        {selectedStock.bb_position_detail}
-                      </Tag>
+                <Col span={8}>
+                  <div style={{ textAlign: 'center' }}>
+                    <Text style={{ color: 'rgba(255,255,255,0.8)', fontSize: 12 }}>综合评分</Text>
+                    <div style={{ 
+                      fontSize: 24, 
+                      fontWeight: 'bold',
+                      color: selectedStock.score >= 0 ? '#b7eb8f' : '#ffccc7'
+                    }}>
+                      {selectedStock.score?.toFixed(1)}
                     </div>
                   </div>
                 </Col>
               </Row>
             </Card>
 
-            <Card size="small" title="综合评级" style={{ marginBottom: 16 }}>
-              <div style={{ textAlign: 'center', padding: '20px 0' }}>
-                <div style={{ fontSize: 32, marginBottom: 8 }}>{selectedStock.stars}</div>
-                <div style={{ fontSize: 18, color: selectedStock.score >= 0 ? '#52c41a' : '#f5222d' }}>
+            {/* K线缩略图 */}
+            <Card 
+              size="small" 
+              title={<Space><StockOutlined /> K线走势 (近30日)</Space>}
+              style={{ marginBottom: 12 }}
+            >
+              <ReactECharts
+                option={getMiniKLineOption(selectedStock)}
+                style={{ height: 180 }}
+                theme={darkMode ? 'dark' : undefined}
+              />
+            </Card>
+
+            <Row gutter={[12, 12]}>
+              <Col span={12}>
+                {/* 技术指标 */}
+                <Card size="small" title={<Space><LineChartOutlined /> 技术指标</Space>} style={{ height: '100%' }}>
+                  <Row gutter={[8, 12]}>
+                    <Col span={12}>
+                      <div style={{ textAlign: 'center', padding: 8, background: '#f6ffed', borderRadius: 6 }}>
+                        <Text type="secondary" style={{ fontSize: 11 }}>RSI指标</Text>
+                        <div style={{ 
+                          fontSize: 20, 
+                          fontWeight: 'bold', 
+                          color: selectedStock.rsi > 70 ? '#cf1322' : selectedStock.rsi < 30 ? '#1890ff' : '#52c41a'
+                        }}>
+                          {selectedStock.rsi?.toFixed(1)}
+                        </div>
+                      </div>
+                    </Col>
+                    <Col span={12}>
+                      <div style={{ textAlign: 'center', padding: 8, background: selectedStock.macd_signal === '金叉' ? '#fff1f0' : selectedStock.macd_signal === '死叉' ? '#f6ffed' : '#f5f5f5', borderRadius: 6 }}>
+                        <Text type="secondary" style={{ fontSize: 11 }}>MACD</Text>
+                        <div>
+                          <Tag color={selectedStock.macd_signal === '金叉' ? 'red' : selectedStock.macd_signal === '死叉' ? 'green' : 'default'}>
+                            {selectedStock.macd_signal}
+                          </Tag>
+                        </div>
+                      </div>
+                    </Col>
+                    <Col span={12}>
+                      <div style={{ textAlign: 'center', padding: 8, background: selectedStock.ma_trend === '多头排列' ? '#fff1f0' : selectedStock.ma_trend === '空头排列' ? '#f6ffed' : '#f5f5f5', borderRadius: 6 }}>
+                        <Text type="secondary" style={{ fontSize: 11 }}>均线趋势</Text>
+                        <div>
+                          <Tag color={selectedStock.ma_trend === '多头排列' ? 'red' : selectedStock.ma_trend === '空头排列' ? 'green' : 'default'}>
+                            {selectedStock.ma_trend}
+                          </Tag>
+                        </div>
+                      </div>
+                    </Col>
+                    <Col span={12}>
+                      <div style={{ textAlign: 'center', padding: 8, background: '#e6f7ff', borderRadius: 6 }}>
+                        <Text type="secondary" style={{ fontSize: 11 }}>布林带</Text>
+                        <div>
+                          <Tag color={selectedStock.bb_position_detail?.includes('上轨') ? 'red' : selectedStock.bb_position_detail?.includes('下轨') ? 'green' : 'blue'}>
+                            {selectedStock.bb_position_detail}
+                          </Tag>
+                        </div>
+                      </div>
+                    </Col>
+                  </Row>
+                </Card>
+              </Col>
+              
+              <Col span={12}>
+                {/* 技术指标雷达图 */}
+                <Card size="small" title={<Space><BarChartOutlined /> 技术雷达</Space>}>
+                  <ReactECharts
+                    option={getTechRadarOption(selectedStock)}
+                    style={{ height: 180 }}
+                    theme={darkMode ? 'dark' : undefined}
+                  />
+                </Card>
+              </Col>
+            </Row>
+
+            {/* 评级详情 */}
+            <Card size="small" title="综合评级" style={{ marginTop: 12 }}>
+              <div style={{ textAlign: 'center', padding: '12px 0' }}>
+                <div style={{ fontSize: 40, marginBottom: 4 }}>{selectedStock.stars}</div>
+                <div style={{ fontSize: 16, color: selectedStock.score >= 0 ? '#52c41a' : '#f5222d', fontWeight: 'bold' }}>
                   {selectedStock.rating}
-                </div>
-                <div style={{ fontSize: 36, fontWeight: 'bold', marginTop: 16, color: selectedStock.score >= 0 ? '#52c41a' : '#f5222d' }}>
-                  {selectedStock.score?.toFixed(1)}<span style={{ fontSize: 14 }}>分</span>
                 </div>
               </div>
             </Card>
 
-            <Card size="small" title="技术信号">
+            {/* 技术信号 */}
+            <Card size="small" title="技术信号" style={{ marginTop: 12 }}>
               <Space wrap>
                 {selectedStock.signals?.map((signal, idx) => (
-                  <Tag key={idx} color="blue">{signal}</Tag>
+                  <Tag key={idx} color="blue" style={{ fontSize: 12, padding: '2px 8px' }}>
+                    {signal}
+                  </Tag>
                 ))}
               </Space>
             </Card>

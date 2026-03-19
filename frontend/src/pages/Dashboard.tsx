@@ -8,7 +8,7 @@ import './Dashboard.css';
 const { Header, Content, Sider } = Layout;
 const { Title, Text } = Typography;
 
-const API_BASE = 'http://170.106.119.80:8089/api';
+const API_BASE = 'http://170.106.119.80:8090/api';
 
 interface DashboardProps {
   darkMode: boolean;

@@ -321,7 +321,7 @@ class MACDStrategy(StrategyBase):
 class BacktestEngine:
     """回测引擎"""
     
-    def __init__(self, initial_capital: float = 100000):
+    def __init__(self, initial_capital: float = 1000000):
         self.initial_capital = initial_capital
         self.commission_rate = 0.0003  # 手续费率 0.03%
         self.min_commission = 5  # 最低手续费5元
@@ -369,15 +369,17 @@ class BacktestEngine:
         self,
         strategy: StrategyBase,
         data: List[Dict],
-        initial_capital: Optional[float] = None
+        initial_capital: Optional[float] = None,
+        actual_start_idx: int = 0
     ) -> BacktestResult:
         """
         执行回测
         
         Args:
             strategy: 策略实例
-            data: K线数据
+            data: K线数据（包含预热期）
             initial_capital: 初始资金
+            actual_start_idx: 实际回测开始索引（预热期后的第一个数据点）
         
         Returns:
             BacktestResult: 回测结果
@@ -387,6 +389,10 @@ class BacktestEngine:
         
         if not data or len(data) < 30:
             raise ValueError("数据不足，至少需要30条K线数据")
+        
+        # 确保actual_start_idx有效
+        if actual_start_idx < 0 or actual_start_idx >= len(data):
+            actual_start_idx = 0
         
         # 生成交易信号
         signals = strategy.generate_signals(data)
@@ -403,13 +409,31 @@ class BacktestEngine:
             date = bar['date']
             price = bar['close']
             
+            # 只在实际回测区间内执行交易（预热期只计算指标，不交易）
+            if i < actual_start_idx:
+                # 预热期：只记录权益曲线，不执行交易
+                equity_curve.append({
+                    'date': date,
+                    'equity': round(initial_capital, 2),
+                    'cash': round(initial_capital, 2),
+                    'position': 0,
+                    'market_value': 0,
+                    'price': price,
+                    'signal': signal.get('reason', ''),
+                    'hold_return': 0
+                })
+                continue
+            
             # 处理信号
             if signal['signal'] == SignalType.BUY and position == 0:
                 # 买入信号
-                # 全仓买入
-                available_cash = cash * 0.999  # 预留手续费
-                shares = int(available_cash / price / 100) * 100  # 整手买入
+                # 全仓买入（预留手续费）
+                available_cash = cash * 0.998  # 预留0.2%手续费
                 
+                # 计算可买入股数（整手）
+                shares = int(available_cash / price / 100) * 100
+                
+                # 如果资金不足以买入1手，跳过（可能是高价股如茅台）
                 if shares >= 100:
                     amount = shares * price
                     commission = max(amount * self.commission_rate, self.min_commission)
@@ -479,9 +503,9 @@ class BacktestEngine:
         # 计算收益率
         total_return = (final_equity - initial_capital) / initial_capital
         
-        # 计算年化收益率
-        days = len(data)
-        years = days / 252  # 假设每年252个交易日
+        # 计算年化收益率（基于实际回测天数，不包括预热期）
+        actual_days = len(data) - actual_start_idx
+        years = actual_days / 252  # 假设每年252个交易日
         annualized_return = (1 + total_return) ** (1 / years) - 1 if years > 0 and total_return > -1 else 0
         
         # 计算最大回撤
@@ -496,15 +520,18 @@ class BacktestEngine:
         # 计算夏普比率
         sharpe_ratio = self.calculate_sharpe_ratio(daily_returns)
         
-        # 统计交易
-        total_trades = len(trades) // 2  # 买卖算一次完整交易
+        # 过滤掉预热期的交易
+        actual_trades = [t for t in trades if any(d['date'] == t.date and i >= actual_start_idx for i, d in enumerate(data))]
+        
+        # 统计交易（使用实际回测区间的交易）
+        total_trades = len(actual_trades) // 2  # 买卖算一次完整交易
         
         # 分析盈亏
         profits = []
         losses = []
         
-        buy_trades = [t for t in trades if t.action == 'buy']
-        sell_trades = [t for t in trades if t.action == 'sell']
+        buy_trades = [t for t in actual_trades if t.action == 'buy']
+        sell_trades = [t for t in actual_trades if t.action == 'sell']
         
         for i, sell in enumerate(sell_trades):
             if i < len(buy_trades):
@@ -528,8 +555,8 @@ class BacktestEngine:
         
         return BacktestResult(
             strategy_id=strategy.__class__.__name__.replace('Strategy', '').lower(),
-            symbol=data[0].get('symbol', ''),
-            start_date=data[0]['date'],
+            symbol=data[actual_start_idx].get('symbol', '') if actual_start_idx < len(data) else data[0].get('symbol', ''),
+            start_date=data[actual_start_idx]['date'] if actual_start_idx < len(data) else data[0]['date'],
             end_date=data[-1]['date'],
             initial_capital=initial_capital,
             final_capital=final_equity,
@@ -544,8 +571,8 @@ class BacktestEngine:
             avg_profit=avg_profit,
             avg_loss=avg_loss,
             profit_factor=profit_factor,
-            trades=trades,
-            equity_curve=equity_curve,
+            trades=actual_trades,
+            equity_curve=equity_curve[actual_start_idx:] if actual_start_idx < len(equity_curve) else equity_curve,
             max_drawdown_period=max_drawdown_period
         )
 
@@ -559,7 +586,7 @@ STRATEGIES = {
         'default_params': {
             'short_period': 5,
             'long_period': 20,
-            'initial_capital': 100000
+            'initial_capital': 1000000
         }
     },
     'macd': {
@@ -570,7 +597,7 @@ STRATEGIES = {
             'fast_period': 12,
             'slow_period': 26,
             'signal_period': 9,
-            'initial_capital': 100000
+            'initial_capital': 1000000
         }
     }
 }

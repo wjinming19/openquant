@@ -1,17 +1,20 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Layout, Menu, Card, Typography, Button, Table, Tabs, Input, Badge, Spin, message } from 'antd';
+import { Layout, Menu, Card, Typography, Button, Table, Tabs, Input, Badge, Spin, message, Alert } from 'antd';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { SearchOutlined, ReloadOutlined, PlusOutlined, ClockCircleOutlined, ArrowUpOutlined, ArrowDownOutlined } from '@ant-design/icons';
 import axios from 'axios';
 import './Dashboard.css';
 
-// API 基础地址
-const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:8089/api';
+// API 基础地址 - 使用后端实际地址
+const API_BASE = 'http://170.106.119.80:8090';
 
 const { Header, Content, Sider } = Layout;
 const { Text } = Typography;
 const { TabPane } = Tabs;
 const { Search } = Input;
+
+// 排行类型定义
+type RankingType = 'rise' | 'fall' | 'volume' | 'turnover';
 
 interface StockData {
   rank: number;
@@ -39,10 +42,11 @@ interface PageProps {
 const Market: React.FC<PageProps> = ({ darkMode, setDarkMode }) => {
   const navigate = useNavigate();
   const location = useLocation();
-  const [activeTab, setActiveTab] = useState('rise');
+  const [activeTab, setActiveTab] = useState<RankingType>('rise');
   const [stockData, setStockData] = useState<StockData[]>([]);
   const [marketIndices, setMarketIndices] = useState<MarketIndex[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [lastUpdate, setLastUpdate] = useState<string>('');
   const [searchText, setSearchText] = useState('');
   const refreshIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -61,125 +65,7 @@ const Market: React.FC<PageProps> = ({ darkMode, setDarkMode }) => {
     navigate(key);
   };
 
-  // 生成模拟股票数据
-  const generateMockStockData = useCallback((type: string): StockData[] => {
-    const industries = ['半导体', '新能源', '医药生物', '软件开发', '银行', '白酒', '汽车', '消费电子', '化工', '电力'];
-    const stocks: StockData[] = [];
-    const baseStocks = [
-      { symbol: '000001', name: '平安银行' },
-      { symbol: '000002', name: '万科A' },
-      { symbol: '000063', name: '中兴通讯' },
-      { symbol: '000100', name: 'TCL科技' },
-      { symbol: '000333', name: '美的集团' },
-      { symbol: '000538', name: '云南白药' },
-      { symbol: '000568', name: '泸州老窖' },
-      { symbol: '000651', name: '格力电器' },
-      { symbol: '000725', name: '京东方A' },
-      { symbol: '000768', name: '中航西飞' },
-      { symbol: '000858', name: '五粮液' },
-      { symbol: '000895', name: '双汇发展' },
-      { symbol: '002001', name: '新和成' },
-      { symbol: '002007', name: '华兰生物' },
-      { symbol: '002024', name: '苏宁易购' },
-      { symbol: '002027', name: '分众传媒' },
-      { symbol: '002049', name: '紫光国微' },
-      { symbol: '002120', name: '韵达股份' },
-      { symbol: '002142', name: '宁波银行' },
-      { symbol: '002230', name: '科大讯飞' },
-      { symbol: '002236', name: '大华股份' },
-      { symbol: '002271', name: '东方雨虹' },
-      { symbol: '002304', name: '洋河股份' },
-      { symbol: '002352', name: '顺丰控股' },
-      { symbol: '002371', name: '北方华创' },
-      { symbol: '002415', name: '海康威视' },
-      { symbol: '002460', name: '赣锋锂业' },
-      { symbol: '002466', name: '天齐锂业' },
-      { symbol: '002475', name: '立讯精密' },
-      { symbol: '002594', name: '比亚迪' },
-      { symbol: '600000', name: '浦发银行' },
-      { symbol: '600009', name: '上海机场' },
-      { symbol: '600016', name: '民生银行' },
-      { symbol: '600028', name: '中国石化' },
-      { symbol: '600030', name: '中信证券' },
-      { symbol: '600031', name: '三一重工' },
-      { symbol: '600036', name: '招商银行' },
-      { symbol: '600048', name: '保利发展' },
-      { symbol: '600050', name: '中国联通' },
-      { symbol: '600104', name: '上汽集团' },
-      { symbol: '600276', name: '恒瑞医药' },
-      { symbol: '600309', name: '万华化学' },
-      { symbol: '600519', name: '贵州茅台' },
-      { symbol: '600585', name: '海螺水泥' },
-      { symbol: '600588', name: '用友网络' },
-      { symbol: '600690', name: '海尔智家' },
-      { symbol: '600745', name: '闻泰科技' },
-      { symbol: '600809', name: '山西汾酒' },
-      { symbol: '600887', name: '伊利股份' },
-      { symbol: '601012', name: '隆基绿能' },
-      { symbol: '601088', name: '中国神华' },
-      { symbol: '601166', name: '兴业银行' },
-      { symbol: '601318', name: '中国平安' },
-      { symbol: '601398', name: '工商银行' },
-    ];
-
-    baseStocks.forEach((stock, index) => {
-      const basePrice = 10 + Math.random() * 90;
-      let changePct: number;
-      
-      // 根据类型调整涨跌幅分布
-      switch (type) {
-        case 'rise':
-          changePct = Math.random() * 10 + 0.1;
-          break;
-        case 'fall':
-          changePct = -(Math.random() * 10 + 0.1);
-          break;
-        case 'volume':
-        case 'turnover':
-        case 'fund':
-        default:
-          changePct = (Math.random() - 0.5) * 20;
-          break;
-      }
-      
-      stocks.push({
-        rank: index + 1,
-        symbol: stock.symbol,
-        name: stock.name,
-        price: basePrice * (1 + changePct / 100),
-        change_pct: parseFloat(changePct.toFixed(2)),
-        volume: Math.floor(Math.random() * 100000000) + 1000000,
-        turnover: parseFloat((Math.random() * 30 + 0.5).toFixed(2)),
-        industry: industries[index % industries.length],
-      });
-    });
-
-    // 根据类型排序
-    switch (type) {
-      case 'rise':
-        stocks.sort((a, b) => b.change_pct - a.change_pct);
-        break;
-      case 'fall':
-        stocks.sort((a, b) => a.change_pct - b.change_pct);
-        break;
-      case 'volume':
-        stocks.sort((a, b) => b.volume - a.volume);
-        break;
-      case 'turnover':
-        stocks.sort((a, b) => b.turnover - a.turnover);
-        break;
-      case 'fund':
-        stocks.sort((a, b) => b.change_pct - a.change_pct);
-        break;
-      default:
-        break;
-    }
-
-    // 重新排名
-    return stocks.map((stock, index) => ({ ...stock, rank: index + 1 }));
-  }, []);
-
-  // 生成市场指数数据
+  // 生成市场指数数据（作为fallback）
   const generateMarketIndices = useCallback((): MarketIndex[] => {
     return [
       { name: '上证指数', code: '000001', price: 3052.37, change_pct: 0.42 },
@@ -189,41 +75,51 @@ const Market: React.FC<PageProps> = ({ darkMode, setDarkMode }) => {
     ];
   }, []);
 
-  // 获取数据
-  const fetchData = useCallback(async (type: string) => {
+  // 从后端API获取排行榜数据
+  const fetchRankings = useCallback(async (type: RankingType) => {
     try {
       setLoading(true);
-      const res = await axios.get(`${API_BASE}/market/rankings?type=${type}&limit=50`);
-      if (res.data && res.data.data && res.data.data.length > 0) {
-        setStockData(res.data.data);
+      setError(null);
+      
+      const res = await axios.get(`${API_BASE}/api/market/rankings`, {
+        params: {
+          type,
+          limit: 50
+        },
+        timeout: 10000 // 10秒超时
+      });
+      
+      if (res.data && Array.isArray(res.data.data)) {
+        // 为数据添加排名
+        const rankedData = res.data.data.map((item: StockData, index: number) => ({
+          ...item,
+          rank: index + 1
+        }));
+        setStockData(rankedData);
+        setLastUpdate(new Date().toLocaleTimeString('zh-CN'));
       } else {
-        // API返回空数据，使用本地模拟数据
-        setStockData(generateMockStockData(type));
+        throw new Error('API返回数据格式不正确');
       }
     } catch (error) {
       console.error('获取排行榜数据失败:', error);
-      // 如果API失败，使用本地模拟数据
-      setStockData(generateMockStockData(type));
+      setError('获取数据失败，请稍后重试');
+      message.error('获取排行榜数据失败');
+      setStockData([]);
     } finally {
       setLoading(false);
-      setLastUpdate(new Date().toLocaleTimeString('zh-CN'));
     }
-  }, [generateMockStockData]);
+  }, []);
 
-  // 获取市场指数
+  // 获取市场指数数据
   const fetchMarketIndices = useCallback(async () => {
     try {
-      const res = await axios.get(`${API_BASE}/market/indices`);
-      if (res.data && res.data.data && res.data.data.length > 0) {
-        // 格式化指数数据
-        const formattedIndices = res.data.data.map((item: any) => ({
-          name: item.name,
-          code: item.code,
-          price: item.price,
-          change_pct: item.change_pct,
-        }));
-        setMarketIndices(formattedIndices);
+      const res = await axios.get(`${API_BASE}/api/market/indices`, {
+        timeout: 10000
+      });
+      if (res.data && Array.isArray(res.data.data)) {
+        setMarketIndices(res.data.data);
       } else {
+        // 如果API失败，使用本地模拟数据
         setMarketIndices(generateMarketIndices());
       }
     } catch (error) {
@@ -234,35 +130,58 @@ const Market: React.FC<PageProps> = ({ darkMode, setDarkMode }) => {
 
   // 手动刷新
   const handleRefresh = useCallback(() => {
-    fetchData(activeTab);
-    message.success('数据已刷新');
-  }, [fetchData, activeTab]);
+    fetchRankings(activeTab);
+    fetchMarketIndices();
+    message.success('数据刷新中...');
+  }, [fetchRankings, fetchMarketIndices, activeTab]);
 
-  // 加入自选
-  const handleAddToWatchlist = useCallback((stock: StockData, e: React.MouseEvent) => {
+  // 加入自选 - 调用后端API
+  const handleAddToWatchlist = useCallback(async (stock: StockData, e: React.MouseEvent) => {
     e.stopPropagation();
-    const watchlist = JSON.parse(localStorage.getItem('watchlist') || '[]');
-    if (!watchlist.find((item: StockData) => item.symbol === stock.symbol)) {
-      watchlist.push({
+    try {
+      // 先获取或创建默认分组
+      const listRes = await axios.get(`${API_BASE}/api/watchlist/list`);
+      let defaultGroupId = 'wl_1';
+      
+      if (listRes.data && listRes.data.count === 0) {
+        // 没有分组，创建默认分组
+        const createRes = await axios.post(`${API_BASE}/api/watchlist/create`, {
+          name: '我的自选'
+        });
+        if (createRes.data && createRes.data.watchlist) {
+          defaultGroupId = createRes.data.watchlist.id;
+        }
+      } else if (listRes.data && listRes.data.watchlists && listRes.data.watchlists.length > 0) {
+        defaultGroupId = listRes.data.watchlists[0].id;
+      }
+      
+      // 添加股票到分组
+      const addRes = await axios.post(`${API_BASE}/api/watchlist/${defaultGroupId}/add`, {
         symbol: stock.symbol,
-        name: stock.name,
-        price: stock.price,
-        change_pct: stock.change_pct,
-        alert_min: stock.price * 0.9,
-        alert_max: stock.price * 1.1,
+        name: stock.name
       });
-      localStorage.setItem('watchlist', JSON.stringify(watchlist));
-      message.success(`${stock.name} 已加入自选`);
-    } else {
-      message.info(`${stock.name} 已在自选列表中`);
+      
+      if (addRes.data && addRes.data.success) {
+        message.success(`${stock.name} 已加入自选`);
+      } else {
+        message.info(`${stock.name} 已在自选列表中`);
+      }
+    } catch (error: any) {
+      console.error('添加自选股失败:', error);
+      if (error.response?.data?.detail) {
+        message.info(`${stock.name} 已在自选列表中`);
+      } else {
+        message.error('添加失败，请稍后重试');
+      }
     }
   }, []);
 
   // Tab切换
   const handleTabChange = useCallback((key: string) => {
-    setActiveTab(key);
-    fetchData(key);
-  }, [fetchData]);
+    const validKey = key as RankingType;
+    setActiveTab(validKey);
+    fetchRankings(validKey);
+  }, [fetchRankings]);
 
   // 搜索过滤
   const filteredData = stockData.filter(
@@ -271,13 +190,19 @@ const Market: React.FC<PageProps> = ({ darkMode, setDarkMode }) => {
       stock.symbol.includes(searchText)
   );
 
+  // 获取涨跌幅颜色样式 - 红涨绿跌
+  const getChangeColor = (changePct: number): React.CSSProperties => ({
+    color: changePct > 0 ? '#f5222d' : changePct < 0 ? '#52c41a' : '#666',
+    fontWeight: 500,
+  });
+
   // 表格列定义
   const columns = [
     {
       title: '排名',
       dataIndex: 'rank',
       key: 'rank',
-      width: 60,
+      width: 70,
       align: 'center' as const,
       render: (rank: number) => (
         <Badge
@@ -293,40 +218,61 @@ const Market: React.FC<PageProps> = ({ darkMode, setDarkMode }) => {
       title: '代码',
       dataIndex: 'symbol',
       key: 'symbol',
-      width: 80,
+      width: 90,
       render: (symbol: string) => <span style={{ fontFamily: 'monospace', fontWeight: 500 }}>{symbol}</span>,
     },
     {
       title: '名称',
       dataIndex: 'name',
       key: 'name',
-      width: 100,
+      width: 120,
+      render: (name: string, record: StockData) => (
+        <span style={{ fontWeight: 500 }}>{name}</span>
+      ),
     },
     {
       title: '最新价',
       dataIndex: 'price',
       key: 'price',
-      width: 90,
+      width: 100,
       align: 'right' as const,
-      render: (price: number) => <span>¥{price.toFixed(2)}</span>,
+      render: (price: number, record: StockData) => (
+        <span style={getChangeColor(record.change_pct)}>
+          ¥{price.toFixed(2)}
+        </span>
+      ),
     },
     {
       title: '涨跌幅',
       dataIndex: 'change_pct',
       key: 'change_pct',
-      width: 90,
+      width: 100,
       align: 'right' as const,
       render: (change_pct: number) => (
-        <span className={`stock-change ${change_pct >= 0 ? 'up' : 'down'}`}>
-          {change_pct >= 0 ? '+' : ''}{change_pct.toFixed(2)}%
+        <span style={getChangeColor(change_pct)}>
+          {change_pct > 0 ? '+' : ''}{change_pct.toFixed(2)}%
         </span>
       ),
+    },
+    {
+      title: '涨跌额',
+      key: 'change_amount',
+      width: 100,
+      align: 'right' as const,
+      render: (_: unknown, record: StockData) => {
+        const changeAmount = record.price * record.change_pct / 100;
+        return (
+          <span style={getChangeColor(record.change_pct)}>
+            {changeAmount > 0 ? '+' : ''}{changeAmount.toFixed(2)}
+          </span>
+        );
+      },
     },
     {
       title: '成交量',
       dataIndex: 'volume',
       key: 'volume',
-      width: 100,
+      width: 110,
       align: 'right' as const,
       render: (volume: number) => {
         if (volume >= 100000000) {
@@ -341,7 +287,7 @@ const Market: React.FC<PageProps> = ({ darkMode, setDarkMode }) => {
       title: '换手率',
       dataIndex: 'turnover',
       key: 'turnover',
-      width: 80,
+      width: 90,
       align: 'right' as const,
       render: (turnover: number) => <span>{turnover.toFixed(2)}%</span>,
     },
@@ -349,7 +295,8 @@ const Market: React.FC<PageProps> = ({ darkMode, setDarkMode }) => {
       title: '所属行业',
       dataIndex: 'industry',
       key: 'industry',
-      width: 100,
+      width: 110,
+      render: (industry: string) => <span style={{ color: '#666' }}>{industry || '--'}</span>,
     },
     {
       title: '操作',
@@ -370,14 +317,14 @@ const Market: React.FC<PageProps> = ({ darkMode, setDarkMode }) => {
 
   // 初始化数据
   useEffect(() => {
-    fetchData(activeTab);
+    fetchRankings(activeTab);
     fetchMarketIndices();
-  }, [fetchData, activeTab, fetchMarketIndices]);
+  }, [fetchRankings, fetchMarketIndices, activeTab]);
 
-  // 定时刷新
+  // 定时刷新 - 每30秒
   useEffect(() => {
     refreshIntervalRef.current = setInterval(() => {
-      fetchData(activeTab);
+      fetchRankings(activeTab);
       fetchMarketIndices();
     }, 30000);
 
@@ -386,7 +333,15 @@ const Market: React.FC<PageProps> = ({ darkMode, setDarkMode }) => {
         clearInterval(refreshIntervalRef.current);
       }
     };
-  }, [fetchData, fetchMarketIndices, activeTab]);
+  }, [fetchRankings, fetchMarketIndices, activeTab]);
+
+  // Tab配置
+  const tabConfig = [
+    { key: 'rise', label: '涨幅榜', icon: <ArrowUpOutlined style={{ color: '#f5222d' }} /> },
+    { key: 'fall', label: '跌幅榜', icon: <ArrowDownOutlined style={{ color: '#52c41a' }} /> },
+    { key: 'volume', label: '成交量榜', icon: '🔥' },
+    { key: 'turnover', label: '换手率榜', icon: '🔄' },
+  ];
 
   return (
     <Layout className={`dashboard ${darkMode ? 'dark' : 'light'}`}>
@@ -415,13 +370,13 @@ const Market: React.FC<PageProps> = ({ darkMode, setDarkMode }) => {
               <React.Fragment key={index.code}>
                 <div className="top-bar-item">
                   <span className="label">{index.name}</span>
-                  <span className={`value ${index.change_pct >= 0 ? 'up' : 'down'}`}>
+                  <span style={getChangeColor(index.change_pct)}>
                     {index.price.toFixed(2)}
                   </span>
-                  <span className={`change ${index.change_pct >= 0 ? 'up' : 'down'}`}>
-                    {index.change_pct >= 0 ? '+' : ''}{index.change_pct.toFixed(2)}%
+                  <span style={getChangeColor(index.change_pct)}>
+                    {index.change_pct > 0 ? '+' : ''}{index.change_pct.toFixed(2)}%
                   </span>
-                  <span className={`arrow ${index.change_pct >= 0 ? 'up' : 'down'}`}>
+                  <span style={getChangeColor(index.change_pct)}>
                     {index.change_pct >= 0 ? '▲' : '▼'}
                   </span>
                 </div>
@@ -462,28 +417,26 @@ const Market: React.FC<PageProps> = ({ darkMode, setDarkMode }) => {
               </div>
             </div>
 
+            {/* 错误提示 */}
+            {error && (
+              <Alert
+                message={error}
+                type="error"
+                showIcon
+                style={{ marginBottom: 16 }}
+                closable
+                onClose={() => setError(null)}
+              />
+            )}
+
             {/* Tab切换 */}
             <Tabs activeKey={activeTab} onChange={handleTabChange} type="card">
-              <TabPane
-                tab={<span><ArrowUpOutlined style={{ color: '#f5222d' }} /> 涨幅榜</span>}
-                key="rise"
-              />
-              <TabPane
-                tab={<span><ArrowDownOutlined style={{ color: '#52c41a' }} /> 跌幅榜</span>}
-                key="fall"
-              />
-              <TabPane
-                tab={<span>🔥 成交量榜</span>}
-                key="volume"
-              />
-              <TabPane
-                tab={<span>🔄 换手率榜</span>}
-                key="turnover"
-              />
-              <TabPane
-                tab={<span>💰 资金流向榜</span>}
-                key="fund"
-              />
+              {tabConfig.map(tab => (
+                <TabPane
+                  tab={<span>{tab.icon} {tab.label}</span>}
+                  key={tab.key}
+                />
+              ))}
             </Tabs>
 
             {/* 数据表格 */}
@@ -503,6 +456,9 @@ const Market: React.FC<PageProps> = ({ darkMode, setDarkMode }) => {
                   onClick: () => navigate(`/stock/${record.symbol}`),
                   style: { cursor: 'pointer' },
                 })}
+                locale={{
+                  emptyText: '暂无数据'
+                }}
               />
             </Spin>
           </Card>

@@ -12,7 +12,7 @@ const { Header, Content, Sider } = Layout;
 const { Title, Text, Paragraph } = Typography;
 const { TextArea } = Input;
 
-const API_BASE = 'http://170.106.119.80:8089/api';
+const API_BASE = 'http://170.106.119.80:8090/api';
 const DEEPSEEK_API_URL = 'https://api.lkeap.cloud.tencent.com/coding/v3';
 const DEEPSEEK_API_KEY = 'sk-sp-kTzguyvtV6yrvRNOTfzsyLEXxj0NMFRN73HivZWoV7G82vdd';
 

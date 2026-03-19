@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { Layout, Menu, Card, Row, Col, Table, Typography, Space, Tabs, Badge, Drawer, Spin, Alert, Statistic } from 'antd';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { Layout, Menu, Card, Row, Col, Table, Typography, Space, Tabs, Badge, Drawer, Spin, Alert, Statistic, Select, Tag, Progress, Radio } from 'antd';
 import { useNavigate, useLocation } from 'react-router-dom';
 import ReactECharts from 'echarts-for-react';
 import './Dashboard.css';
@@ -7,6 +7,7 @@ import './Dashboard.css';
 const { Header, Content, Sider } = Layout;
 const { Title, Text } = Typography;
 const { TabPane } = Tabs;
+const { Option } = Select;
 
 interface PageProps {
   darkMode: boolean;
@@ -23,6 +24,11 @@ interface IndustryItem {
   pe?: number;
   pb?: number;
   market_cap?: number;
+  volume?: number;
+  amount?: number;
+  up_count?: number;
+  down_count?: number;
+  flat_count?: number;
 }
 
 interface IndustryStock {
@@ -38,6 +44,18 @@ interface IndustryStock {
   market_cap?: number;
 }
 
+interface IndustryKLine {
+  date: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}
+
+type SortField = 'change_pct' | 'fund_flow' | 'volume' | 'amount';
+type SortOrder = 'ascend' | 'descend';
+
 const API_BASE_URL = '/api';
 
 const Industry: React.FC<PageProps> = ({ darkMode, setDarkMode }) => {
@@ -51,11 +69,17 @@ const Industry: React.FC<PageProps> = ({ darkMode, setDarkMode }) => {
   const [industries, setIndustries] = useState<IndustryItem[]>([]);
   const [concepts, setConcepts] = useState<IndustryItem[]>([]);
   
+  // 排行排序状态
+  const [sortField, setSortField] = useState<SortField>('change_pct');
+  const [sortOrder, setSortOrder] = useState<SortOrder>('descend');
+  
   // 抽屉状态
   const [drawerVisible, setDrawerVisible] = useState(false);
   const [selectedIndustry, setSelectedIndustry] = useState<IndustryItem | null>(null);
   const [industryStocks, setIndustryStocks] = useState<IndustryStock[]>([]);
   const [stocksLoading, setStocksLoading] = useState(false);
+  const [industryKLine, setIndustryKLine] = useState<IndustryKLine[]>([]);
+  const [klineLoading, setKlineLoading] = useState(false);
 
   const menuItems = [
     { key: '/dashboard', icon: '📊', label: '大盘情绪' },
@@ -127,6 +151,46 @@ const Industry: React.FC<PageProps> = ({ darkMode, setDarkMode }) => {
     }
   };
 
+  // 获取行业K线数据（模拟数据，实际应由后端提供）
+  const fetchIndustryKLine = async (industryCode: string) => {
+    try {
+      setKlineLoading(true);
+      // 模拟K线数据 - 实际应从后端获取
+      const mockData: IndustryKLine[] = [];
+      const basePrice = selectedIndustry?.change_pct ? 1000 : 1000;
+      let currentPrice = basePrice;
+      
+      for (let i = 60; i >= 0; i--) {
+        const date = new Date();
+        date.setDate(date.getDate() - i);
+        const volatility = 0.02;
+        const change = (Math.random() - 0.48) * volatility;
+        const open = currentPrice;
+        const close = currentPrice * (1 + change);
+        const high = Math.max(open, close) * (1 + Math.random() * 0.01);
+        const low = Math.min(open, close) * (1 - Math.random() * 0.01);
+        const volume = Math.floor(Math.random() * 1000000) + 500000;
+        
+        mockData.push({
+          date: date.toISOString().split('T')[0],
+          open: parseFloat(open.toFixed(2)),
+          high: parseFloat(high.toFixed(2)),
+          low: parseFloat(low.toFixed(2)),
+          close: parseFloat(close.toFixed(2)),
+          volume
+        });
+        currentPrice = close;
+      }
+      
+      setIndustryKLine(mockData);
+    } catch (err) {
+      console.error('获取K线数据失败:', err);
+      setIndustryKLine([]);
+    } finally {
+      setKlineLoading(false);
+    }
+  };
+
   // 初始加载
   useEffect(() => {
     fetchIndustries();
@@ -146,6 +210,7 @@ const Industry: React.FC<PageProps> = ({ darkMode, setDarkMode }) => {
     setSelectedIndustry(industry);
     setDrawerVisible(true);
     fetchIndustryStocks(industry.code);
+    fetchIndustryKLine(industry.code);
   };
 
   // 关闭抽屉
@@ -153,6 +218,7 @@ const Industry: React.FC<PageProps> = ({ darkMode, setDarkMode }) => {
     setDrawerVisible(false);
     setSelectedIndustry(null);
     setIndustryStocks([]);
+    setIndustryKLine([]);
   };
 
   // 获取涨跌幅颜色 (A股: 涨红跌绿)
@@ -174,61 +240,102 @@ const Industry: React.FC<PageProps> = ({ darkMode, setDarkMode }) => {
     return `${prefix}${value.toFixed(2)}亿`;
   };
 
-  // 热力图配置
-  const getHeatmapOption = () => {
+  // 获取排序后的数据
+  const getSortedData = useMemo(() => {
     const data = activeTab === 'industry' ? industries : concepts;
-    const sortedData = [...data].sort((a, b) => b.change_pct - a.change_pct);
-    const top20 = sortedData.slice(0, 20);
+    return [...data].sort((a, b) => {
+      const aVal = a[sortField] ?? 0;
+      const bVal = b[sortField] ?? 0;
+      return sortOrder === 'ascend' ? aVal - bVal : bVal - aVal;
+    });
+  }, [industries, concepts, activeTab, sortField, sortOrder]);
+
+  // 获取涨幅榜/跌幅榜
+  const getTopGainers = useMemo(() => {
+    return [...industries].sort((a, b) => b.change_pct - a.change_pct).slice(0, 10);
+  }, [industries]);
+
+  const getTopLosers = useMemo(() => {
+    return [...industries].sort((a, b) => a.change_pct - b.change_pct).slice(0, 10);
+  }, [industries]);
+
+  const getTopInflow = useMemo(() => {
+    return [...industries].sort((a, b) => b.fund_flow - a.fund_flow).slice(0, 10);
+  }, [industries]);
+
+  const getTopOutflow = useMemo(() => {
+    return [...industries].sort((a, b) => a.fund_flow - b.fund_flow).slice(0, 10);
+  }, [industries]);
+
+  // 矩形树图配置 - 优化版热力图
+  const getTreemapOption = () => {
+    const data = activeTab === 'industry' ? industries : concepts;
+    const sortedData = [...data].sort((a, b) => Math.abs(b.change_pct) - Math.abs(a.change_pct));
     
+    const treemapData = sortedData.map(item => ({
+      name: item.name,
+      value: Math.abs(item.change_pct) + 1,
+      change_pct: item.change_pct,
+      fund_flow: item.fund_flow,
+      itemStyle: {
+        color: item.change_pct > 0 
+          ? `rgba(245, 34, 45, ${Math.min(Math.abs(item.change_pct) / 5, 1)})`
+          : `rgba(82, 196, 26, ${Math.min(Math.abs(item.change_pct) / 5, 1)})`
+      }
+    }));
+
     return {
       backgroundColor: 'transparent',
       title: {
-        text: activeTab === 'industry' ? '行业涨跌幅热力图 (Top 20)' : '概念板块热力图 (Top 20)',
+        text: activeTab === 'industry' ? '行业板块热力图' : '概念板块热力图',
         left: 'center',
-        textStyle: { color: darkMode ? '#fff' : '#333', fontSize: 14 }
+        textStyle: { color: darkMode ? '#fff' : '#333', fontSize: 16, fontWeight: 'bold' }
       },
       tooltip: {
-        position: 'top',
         formatter: (params: any) => {
-          const item = top20[params.data[1]];
-          if (!item) return '';
-          return `${item.name}<br/>涨跌幅: ${formatChange(item.change_pct)}<br/>资金流向: ${formatFundFlow(item.fund_flow)}`;
-        }
-      },
-      grid: { top: '15%', bottom: '10%', left: '25%', right: '10%' },
-      xAxis: {
-        type: 'category',
-        data: ['涨跌幅'],
-        splitArea: { show: true }
-      },
-      yAxis: {
-        type: 'category',
-        data: top20.map(d => d.name),
-        splitArea: { show: true },
-        axisLabel: { 
-          color: darkMode ? '#999' : '#666',
-          fontSize: 11
-        }
-      },
-      visualMap: {
-        min: -5,
-        max: 5,
-        calculable: true,
-        orient: 'horizontal',
-        left: 'center',
-        bottom: '0%',
-        inRange: {
-          color: ['#52c41a', '#e8e8e8', '#f5222d']  // 跌绿涨红
+          const data = params.data;
+          return `<div style="font-weight:bold;margin-bottom:5px">${data.name}</div>
+                  <div>涨跌幅: <span style="color:${getChangeColor(data.change_pct)};font-weight:bold">${formatChange(data.change_pct)}</span></div>
+                  <div>资金流向: <span style="color:${getChangeColor(data.fund_flow)}">${formatFundFlow(data.fund_flow)}</span></div>`;
         }
       },
       series: [{
-        name: '涨跌幅',
-        type: 'heatmap',
-        data: top20.map((item, index) => [0, index, item.change_pct]),
+        type: 'treemap',
+        width: '95%',
+        height: '85%',
+        top: '10%',
+        roam: false,
+        nodeClick: false,
+        breadcrumb: { show: false },
         label: {
           show: true,
-          formatter: (params: any) => params.data[2].toFixed(1) + '%'
-        }
+          formatter: (params: any) => {
+            const data = params.data;
+            return `{name|${data.name}}\n{change|${data.change_pct > 0 ? '+' : ''}${data.change_pct.toFixed(2)}%}`;
+          },
+          rich: {
+            name: {
+              fontSize: 12,
+              fontWeight: 'bold',
+              color: '#fff',
+              textShadowColor: 'rgba(0,0,0,0.5)',
+              textShadowBlur: 3
+            },
+            change: {
+              fontSize: 11,
+              color: '#fff',
+              fontWeight: 'bold',
+              textShadowColor: 'rgba(0,0,0,0.5)',
+              textShadowBlur: 3
+            }
+          }
+        },
+        itemStyle: {
+          borderColor: darkMode ? '#1f1f1f' : '#fff',
+          borderWidth: 2,
+          gapWidth: 2
+        },
+        data: treemapData
       }]
     };
   };
@@ -243,16 +350,17 @@ const Industry: React.FC<PageProps> = ({ darkMode, setDarkMode }) => {
       title: {
         text: '资金流向排行 (Top 15)',
         left: 'center',
-        textStyle: { color: darkMode ? '#fff' : '#333', fontSize: 14 }
+        textStyle: { color: darkMode ? '#fff' : '#333', fontSize: 14, fontWeight: 'bold' }
       },
       tooltip: {
         trigger: 'axis',
         axisPointer: { type: 'shadow' }
       },
-      grid: { left: '20%', right: '10%', top: '15%', bottom: '10%' },
+      grid: { left: '22%', right: '10%', top: '15%', bottom: '10%' },
       xAxis: {
         type: 'value',
-        axisLabel: { formatter: '{value}亿', color: darkMode ? '#999' : '#666' }
+        axisLabel: { formatter: '{value}亿', color: darkMode ? '#999' : '#666' },
+        splitLine: { lineStyle: { color: darkMode ? '#333' : '#eee' } }
       },
       yAxis: {
         type: 'category',
@@ -264,16 +372,121 @@ const Industry: React.FC<PageProps> = ({ darkMode, setDarkMode }) => {
       },
       series: [{
         type: 'bar',
-        data: sorted.map(d => d.fund_flow).reverse(),
-        itemStyle: {
-          color: (params: any) => params.value >= 0 ? '#f5222d' : '#52c41a'  // 涨红跌绿
-        },
+        data: sorted.map(d => ({
+          value: d.fund_flow,
+          itemStyle: {
+            color: d.fund_flow >= 0 ? '#f5222d' : '#52c41a'
+          }
+        })).reverse(),
         label: {
           show: true,
           position: 'right',
-          formatter: '{c}亿'
+          formatter: '{c}亿',
+          color: darkMode ? '#ccc' : '#666'
         }
       }]
+    };
+  };
+
+  // 行业K线图配置
+  const getKLineOption = () => {
+    if (!industryKLine.length) return {};
+    
+    const dates = industryKLine.map(d => d.date);
+    const data = industryKLine.map(d => [d.open, d.close, d.low, d.high]);
+    const volumes = industryKLine.map(d => d.volume);
+    
+    return {
+      backgroundColor: 'transparent',
+      title: {
+        text: `${selectedIndustry?.name} - 行业走势`,
+        left: 'center',
+        textStyle: { color: darkMode ? '#fff' : '#333', fontSize: 14 }
+      },
+      tooltip: {
+        trigger: 'axis',
+        axisPointer: { type: 'cross' }
+      },
+      legend: {
+        data: ['K线', '成交量'],
+        top: 30
+      },
+      grid: [
+        { left: '10%', right: '10%', top: '15%', height: '50%' },
+        { left: '10%', right: '10%', top: '70%', height: '20%' }
+      ],
+      xAxis: [
+        {
+          type: 'category',
+          data: dates,
+          scale: true,
+          boundaryGap: false,
+          axisLine: { onZero: false, lineStyle: { color: darkMode ? '#666' : '#ccc' } },
+          splitLine: { show: false },
+          min: 'dataMin',
+          max: 'dataMax'
+        },
+        {
+          type: 'category',
+          gridIndex: 1,
+          data: dates,
+          scale: true,
+          boundaryGap: false,
+          axisLine: { onZero: false },
+          axisTick: { show: false },
+          splitLine: { show: false },
+          axisLabel: { show: false },
+          min: 'dataMin',
+          max: 'dataMax'
+        }
+      ],
+      yAxis: [
+        {
+          scale: true,
+          splitArea: { show: true, areaStyle: { color: darkMode ? ['#2a2a2a', '#1f1f1f'] : ['#fafafa', '#f5f5f5'] } },
+          axisLine: { lineStyle: { color: darkMode ? '#666' : '#ccc' } },
+          axisLabel: { color: darkMode ? '#999' : '#666' }
+        },
+        {
+          scale: true,
+          gridIndex: 1,
+          splitNumber: 2,
+          axisLabel: { show: false },
+          axisLine: { show: false },
+          axisTick: { show: false },
+          splitLine: { show: false }
+        }
+      ],
+      dataZoom: [
+        { type: 'inside', xAxisIndex: [0, 1], start: 50, end: 100 },
+        { show: true, xAxisIndex: [0, 1], type: 'slider', top: '92%', start: 50, end: 100 }
+      ],
+      series: [
+        {
+          name: 'K线',
+          type: 'candlestick',
+          data: data,
+          itemStyle: {
+            color: '#f5222d',
+            color0: '#52c41a',
+            borderColor: '#f5222d',
+            borderColor0: '#52c41a'
+          }
+        },
+        {
+          name: '成交量',
+          type: 'bar',
+          xAxisIndex: 1,
+          yAxisIndex: 1,
+          data: volumes,
+          itemStyle: {
+            color: (params: any) => {
+              const index = params.dataIndex;
+              return data[index][1] >= data[index][0] ? '#f5222d' : '#52c41a';
+            }
+          }
+        }
+      ]
     };
   };
 
@@ -282,7 +495,7 @@ const Industry: React.FC<PageProps> = ({ darkMode, setDarkMode }) => {
     {
       title: '排名',
       width: 60,
-      render: (_: any, __: any, index: number) => <Text>{index + 1}</Text>
+      render: (_: any, __: any, index: number) => <Text strong>{index + 1}</Text>
     },
     {
       title: '板块名称',
@@ -290,7 +503,7 @@ const Industry: React.FC<PageProps> = ({ darkMode, setDarkMode }) => {
       render: (name: string, record: IndustryItem) => (
         <a 
           onClick={() => handleIndustryClick(record)}
-          style={{ fontWeight: 'bold', cursor: 'pointer' }}
+          style={{ fontWeight: 'bold', cursor: 'pointer', color: '#1890ff' }}
         >
           {name}
         </a>
@@ -305,9 +518,24 @@ const Industry: React.FC<PageProps> = ({ darkMode, setDarkMode }) => {
       render: (change: number) => (
         <span style={{ 
           color: getChangeColor(change),
-          fontWeight: 'bold'
+          fontWeight: 'bold',
+          fontSize: 14
         }}>
           {formatChange(change)}
+        </span>
+      )
+    },
+    {
+      title: '资金流向',
+      dataIndex: 'fund_flow',
+      align: 'right' as const,
+      sorter: (a: IndustryItem, b: IndustryItem) => a.fund_flow - b.fund_flow,
+      render: (flow: number) => (
+        <span style={{ 
+          color: getChangeColor(flow),
+          fontWeight: 'bold'
+        }}>
+          {formatFundFlow(flow)}
         </span>
       )
     },
@@ -317,38 +545,55 @@ const Industry: React.FC<PageProps> = ({ darkMode, setDarkMode }) => {
       render: (lead: string, record: IndustryItem) => (
         <Space>
           <Text>{lead}</Text>
-          <Badge 
-            count={formatChange(record.lead_change)}
-            style={{ 
-              backgroundColor: record.lead_change >= 0 ? '#f5222d' : '#52c41a',
-              fontSize: 10
-            }} 
-          />
+          <Tag 
+            color={record.lead_change >= 0 ? '#f5222d' : '#52c41a'}
+            style={{ fontSize: 11 }}
+          >
+            {formatChange(record.lead_change)}
+          </Tag>
         </Space>
       )
     },
     {
-      title: '资金流向',
-      dataIndex: 'fund_flow',
-      align: 'right' as const,
-      sorter: (a: IndustryItem, b: IndustryItem) => a.fund_flow - b.fund_flow,
-      render: (flow: number) => (
-        <span style={{ color: getChangeColor(flow) }}>
-          {formatFundFlow(flow)}
-        </span>
-      )
+      title: '涨跌分布',
+      dataIndex: 'up_count',
+      render: (_: any, record: IndustryItem) => {
+        const up = record.up_count || 0;
+        const down = record.down_count || 0;
+        const total = up + down + (record.flat_count || 0);
+        if (total === 0) return '-';
+        const upPercent = (up / total) * 100;
+        return (
+          <div style={{ width: 80 }}>
+            <Progress 
+              percent={upPercent} 
+              size="small" 
+              strokeColor="#f5222d"
+              trailColor="#52c41a"
+              showInfo={false}
+            />
+            <div style={{ fontSize: 10, color: '#999' }}>
+              <span style={{ color: '#f5222d' }}>↑{up}</span>
+              <span style={{ margin: '0 4px' }}>/</span>
+              <span style={{ color: '#52c41a' }}>↓{down}</span>
+            </div>
+          </div>
+        );
+      }
     },
     {
       title: 'PE',
       dataIndex: 'pe',
       align: 'right' as const,
-      render: (pe?: number) => pe ? pe.toFixed(2) : '-'
+      width: 70,
+      render: (pe?: number) => pe ? <Text type="secondary">{pe.toFixed(2)}</Text> : '-'
     },
     {
       title: 'PB',
       dataIndex: 'pb',
       align: 'right' as const,
-      render: (pb?: number) => pb ? pb.toFixed(2) : '-'
+      width: 70,
+      render: (pb?: number) => pb ? <Text type="secondary">{pb.toFixed(2)}</Text> : '-'
     }
   ];
 
@@ -458,7 +703,7 @@ const Industry: React.FC<PageProps> = ({ darkMode, setDarkMode }) => {
           {/* 统计卡片 */}
           <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
             <Col xs={12} sm={6}>
-              <Card size="small">
+              <Card size="small" className="stat-card">
                 <Statistic 
                   title="上涨板块"
                   value={industries.filter(i => i.change_pct > 0).length}
@@ -468,7 +713,7 @@ const Industry: React.FC<PageProps> = ({ darkMode, setDarkMode }) => {
               </Card>
             </Col>
             <Col xs={12} sm={6}>
-              <Card size="small">
+              <Card size="small" className="stat-card">
                 <Statistic 
                   title="下跌板块"
                   value={industries.filter(i => i.change_pct < 0).length}
@@ -478,7 +723,7 @@ const Industry: React.FC<PageProps> = ({ darkMode, setDarkMode }) => {
               </Card>
             </Col>
             <Col xs={12} sm={6}>
-              <Card size="small">
+              <Card size="small" className="stat-card">
                 <Statistic 
                   title="净流入板块"
                   value={industries.filter(i => i.fund_flow > 0).length}
@@ -487,7 +732,7 @@ const Industry: React.FC<PageProps> = ({ darkMode, setDarkMode }) => {
               </Card>
             </Col>
             <Col xs={12} sm={6}>
-              <Card size="small">
+              <Card size="small" className="stat-card">
                 <Statistic 
                   title="净流出板块"
                   value={industries.filter(i => i.fund_flow < 0).length}
@@ -496,26 +741,90 @@ const Industry: React.FC<PageProps> = ({ darkMode, setDarkMode }) => {
               </Card>
             </Col>
           </Row>
+
+          {/* 排行快报 */}
+          <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+            <Col xs={24} sm={12} lg={6}>
+              <Card 
+                size="small" 
+                title={<span style={{ color: '#f5222d', fontWeight: 'bold' }}>🔥 涨幅榜 Top 5</span>}
+                className="rank-card"
+              >
+                {getTopGainers.slice(0, 5).map((item, idx) => (
+                  <div key={item.code} className="rank-item" onClick={() => handleIndustryClick(item)}>
+                    <span className="rank-num" style={{ color: idx < 3 ? '#f5222d' : '#999' }}>{idx + 1}</span>
+                    <span className="rank-name">{item.name}</span>
+                    <span className="rank-value" style={{ color: '#f5222d' }}>+{item.change_pct.toFixed(2)}%</span>
+                  </div>
+                ))}
+              </Card>
+            </Col>
+            <Col xs={24} sm={12} lg={6}>
+              <Card 
+                size="small" 
+                title={<span style={{ color: '#52c41a', fontWeight: 'bold' }}>📉 跌幅榜 Top 5</span>}
+                className="rank-card"
+              >
+                {getTopLosers.slice(0, 5).map((item, idx) => (
+                  <div key={item.code} className="rank-item" onClick={() => handleIndustryClick(item)}>
+                    <span className="rank-num" style={{ color: idx < 3 ? '#52c41a' : '#999' }}>{idx + 1}</span>
+                    <span className="rank-name">{item.name}</span>
+                    <span className="rank-value" style={{ color: '#52c41a' }}>{item.change_pct.toFixed(2)}%</span>
+                  </div>
+                ))}
+              </Card>
+            </Col>
+            <Col xs={24} sm={12} lg={6}>
+              <Card 
+                size="small" 
+                title={<span style={{ color: '#f5222d', fontWeight: 'bold' }}>💰 资金流入 Top 5</span>}
+                className="rank-card"
+              >
+                {getTopInflow.slice(0, 5).map((item, idx) => (
+                  <div key={item.code} className="rank-item" onClick={() => handleIndustryClick(item)}>
+                    <span className="rank-num" style={{ color: idx < 3 ? '#f5222d' : '#999' }}>{idx + 1}</span>
+                    <span className="rank-name">{item.name}</span>
+                    <span className="rank-value" style={{ color: '#f5222d' }}>+{item.fund_flow.toFixed(2)}亿</span>
+                  </div>
+                ))}
+              </Card>
+            </Col>
+            <Col xs={24} sm={12} lg={6}>
+              <Card 
+                size="small" 
+                title={<span style={{ color: '#52c41a', fontWeight: 'bold' }}>💸 资金流出 Top 5</span>}
+                className="rank-card"
+              >
+                {getTopOutflow.slice(0, 5).map((item, idx) => (
+                  <div key={item.code} className="rank-item" onClick={() => handleIndustryClick(item)}>
+                    <span className="rank-num" style={{ color: idx < 3 ? '#52c41a' : '#999' }}>{idx + 1}</span>
+                    <span className="rank-name">{item.name}</span>
+                    <span className="rank-value" style={{ color: '#52c41a' }}>{item.fund_flow.toFixed(2)}亿</span>
+                  </div>
+                ))}
+              </Card>
+            </Col>
+          </Row>
           
           {/* 图表区域 */}
           <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
-            <Col xs={24} lg={12}>
-              <Card size="small" bodyStyle={{ padding: 10 }}>
+            <Col xs={24} lg={14}>
+              <Card size="small" bodyStyle={{ padding: 10 }} className="chart-card">
                 <Spin spinning={loading}>
                   <ReactECharts
-                    option={getHeatmapOption()}
-                    style={{ height: 400 }}
+                    option={getTreemapOption()}
+                    style={{ height: 450 }}
                     theme={darkMode ? 'dark' : undefined}
                   />
                 </Spin>
               </Card>
             </Col>
-            <Col xs={24} lg={12}>
-              <Card size="small" bodyStyle={{ padding: 10 }}>
+            <Col xs={24} lg={10}>
+              <Card size="small" bodyStyle={{ padding: 10 }} className="chart-card">
                 <Spin spinning={loading}>
                   <ReactECharts
                     option={getFlowOption()}
-                    style={{ height: 400 }}
+                    style={{ height: 450 }}
                     theme={darkMode ? 'dark' : undefined}
                   />
                 </Spin>
@@ -524,27 +833,56 @@ const Industry: React.FC<PageProps> = ({ darkMode, setDarkMode }) => {
           </Row>
 
           {/* 数据表格 */}
-          <Card size="small">
-            <Tabs activeKey={activeTab} onChange={setActiveTab} type="card">
+          <Card size="small" className="table-card">
+            <Tabs 
+              activeKey={activeTab} 
+              onChange={setActiveTab} 
+              type="card"
+              tabBarExtraContent={
+                <Space>
+                  <Text type="secondary">排序:</Text>
+                  <Select
+                    value={sortField}
+                    onChange={(value: SortField) => setSortField(value)}
+                    size="small"
+                    style={{ width: 100 }}
+                  >
+                    <Option value="change_pct">涨跌幅</Option>
+                    <Option value="fund_flow">资金流向</Option>
+                    <Option value="volume">成交量</Option>
+                    <Option value="amount">成交额</Option>
+                  </Select>
+                  <Radio.Group
+                    value={sortOrder}
+                    onChange={(e) => setSortOrder(e.target.value)}
+                    size="small"
+                  >
+                    <Radio.Button value="descend">降序</Radio.Button>
+                    <Radio.Button value="ascend">升序</Radio.Button>
+                  </Radio.Group>
+                </Space>
+              }
+            >
               <TabPane tab={`行业板块 (${industries.length})`} key="industry">
                 <Table
-                  dataSource={industries}
+                  dataSource={getSortedData}
                   columns={columns}
                   rowKey="code"
-                  pagination={{ pageSize: 20 }}
+                  pagination={{ pageSize: 15 }}
                   size="small"
                   loading={loading}
-                  scroll={{ x: 700 }}
+                  scroll={{ x: 800 }}
+                  rowClassName={(record) => record.change_pct > 0 ? 'row-up' : record.change_pct < 0 ? 'row-down' : ''}
                 />
               </TabPane>
               <TabPane tab={`概念板块 (${concepts.length})`} key="concept">
                 <Table
-                  dataSource={concepts}
+                  dataSource={getSortedData}
                   columns={columns}
                   rowKey="code"
-                  pagination={{ pageSize: 20 }}
+                  pagination={{ pageSize: 15 }}
                   size="small"
-                  scroll={{ x: 700 }}
+                  scroll={{ x: 800 }}
                 />
               </TabPane>
             </Tabs>
@@ -556,65 +894,165 @@ const Industry: React.FC<PageProps> = ({ darkMode, setDarkMode }) => {
       <Drawer
         title={
           selectedIndustry ? (
-            <Space>
-              <span>{selectedIndustry.name}</span>
-              <span style={{ 
-                color: getChangeColor(selectedIndustry.change_pct),
-                fontSize: 14
-              }}>
+            <Space size="large">
+              <span style={{ fontSize: 18, fontWeight: 'bold' }}>{selectedIndustry.name}</span>
+              <Tag color={selectedIndustry.change_pct >= 0 ? '#f5222d' : '#52c41a'}>
                 {formatChange(selectedIndustry.change_pct)}
-              </span>
+              </Tag>
+              <Tag color={selectedIndustry.fund_flow >= 0 ? '#f5222d' : '#52c41a'}>
+                资金流向: {formatFundFlow(selectedIndustry.fund_flow)}
+              </Tag>
             </Space>
           ) : '行业成分股'
         }
         placement="right"
-        width={900}
+        width={1000}
         onClose={handleCloseDrawer}
         open={drawerVisible}
+        className="industry-drawer"
       >
         {selectedIndustry && (
-          <div style={{ marginBottom: 16 }}>
-            <Row gutter={[16, 16]}>
-              <Col span={8}>
-                <Statistic 
-                  title="涨跌幅" 
-                  value={selectedIndustry.change_pct}
-                  valueStyle={{ color: getChangeColor(selectedIndustry.change_pct) }}
-                  suffix="%"
-                  precision={2}
+          <>
+            {/* 行业统计 */}
+            <Card size="small" style={{ marginBottom: 16 }} className="drawer-stats">
+              <Row gutter={[24, 16]}>
+                <Col span={6}>
+                  <Statistic 
+                    title="涨跌幅" 
+                    value={selectedIndustry.change_pct}
+                    valueStyle={{ color: getChangeColor(selectedIndustry.change_pct), fontSize: 24 }}
+                    suffix="%"
+                    precision={2}
+                  />
+                </Col>
+                <Col span={6}>
+                  <Statistic 
+                    title="资金流向" 
+                    value={selectedIndustry.fund_flow}
+                    valueStyle={{ color: getChangeColor(selectedIndustry.fund_flow), fontSize: 24 }}
+                    suffix="亿"
+                    precision={2}
+                  />
+                </Col>
+                <Col span={6}>
+                  <Statistic 
+                    title="龙头股" 
+                    value={selectedIndustry.lead_stock}
+                    suffix={<Tag color={selectedIndustry.lead_change >= 0 ? '#f5222d' : '#52c41a'}>{formatChange(selectedIndustry.lead_change)}</Tag>}
+                    valueStyle={{ fontSize: 18 }}
+                  />
+                </Col>
+                <Col span={6}>
+                  <Statistic 
+                    title="PE / PB" 
+                    value={`${selectedIndustry.pe?.toFixed(2) || '-'}`}
+                    suffix={`/ ${selectedIndustry.pb?.toFixed(2) || '-'}`}
+                    valueStyle={{ fontSize: 18 }}
+                  />
+                </Col>
+              </Row>
+            </Card>
+
+            {/* K线走势图 */}
+            <Card 
+              size="small" 
+              title="📈 行业走势" 
+              style={{ marginBottom: 16 }}
+              className="kline-card"
+            >
+              <Spin spinning={klineLoading}>
+                <ReactECharts
+                  option={getKLineOption()}
+                  style={{ height: 350 }}
+                  theme={darkMode ? 'dark' : undefined}
                 />
-              </Col>
-              <Col span={8}>
-                <Statistic 
-                  title="资金流向" 
-                  value={selectedIndustry.fund_flow}
-                  valueStyle={{ color: getChangeColor(selectedIndustry.fund_flow) }}
-                  suffix="亿"
-                  precision={2}
-                />
-              </Col>
-              <Col span={8}>
-                <Statistic 
-                  title="龙头股" 
-                  value={selectedIndustry.lead_stock}
-                  suffix={formatChange(selectedIndustry.lead_change)}
-                  valueStyle={{ fontSize: 16 }}
-                />
-              </Col>
-            </Row>
-          </div>
+              </Spin>
+            </Card>
+
+            {/* 成分股列表 */}
+            <Card size="small" title="📋 成分股列表" className="stocks-card">
+              <Table
+                dataSource={industryStocks}
+                columns={stockColumns}
+                rowKey="symbol"
+                pagination={{ pageSize: 10 }}
+                size="small"
+                loading={stocksLoading}
+                scroll={{ x: 800 }}
+              />
+            </Card>
+          </>
         )}
-        
-        <Table
-          dataSource={industryStocks}
-          columns={stockColumns}
-          rowKey="symbol"
-          pagination={{ pageSize: 20 }}
-          size="small"
-          loading={stocksLoading}
-          scroll={{ x: 800 }}
-        />
       </Drawer>
+
+      <style>{`
+        .stat-card {
+          transition: all 0.3s;
+        }
+        .stat-card:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+        .chart-card {
+          border-radius: 8px;
+        }
+        .table-card {
+          border-radius: 8px;
+        }
+        .rank-card {
+          border-radius: 8px;
+          height: 200px;
+        }
+        .rank-card .ant-card-body {
+          padding: 8px 12px;
+        }
+        .rank-item {
+          display: flex;
+          align-items: center;
+          padding: 6px 0;
+          border-bottom: 1px solid #f0f0f0;
+          cursor: pointer;
+          transition: background 0.2s;
+        }
+        .rank-item:hover {
+          background: #f5f5f5;
+        }
+        .rank-item:last-child {
+          border-bottom: none;
+        }
+        .rank-num {
+          width: 24px;
+          font-weight: bold;
+          font-size: 14px;
+        }
+        .rank-name {
+          flex: 1;
+          font-size: 13px;
+        }
+        .rank-value {
+          font-weight: bold;
+          font-size: 13px;
+        }
+        .row-up {
+          background: linear-gradient(90deg, rgba(245,34,45,0.05) 0%, transparent 100%);
+        }
+        .row-down {
+          background: linear-gradient(90deg, rgba(82,196,26,0.05) 0%, transparent 100%);
+        }
+        .industry-drawer .ant-drawer-body {
+          background: ${darkMode ? '#141414' : '#f5f5f5'};
+          padding: 16px;
+        }
+        .drawer-stats {
+          background: ${darkMode ? '#1f1f1f' : '#fff'};
+        }
+        .kline-card {
+          background: ${darkMode ? '#1f1f1f' : '#fff'};
+        }
+        .stocks-card {
+          background: ${darkMode ? '#1f1f1f' : '#fff'};
+        }
+      `}</style>
     </Layout>
   );
 };

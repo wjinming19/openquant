@@ -13,7 +13,7 @@ from app.core.backtest import (
     create_strategy,
     STRATEGIES
 )
-from app.core.fetcher import Fetcher
+from app.data.fetcher import data_fetcher
 
 router = APIRouter()
 
@@ -105,18 +105,61 @@ async def run_backtest(request: BacktestRequest):
         # 获取初始资金
         initial_capital = default_params.get('initial_capital', 100000)
         
-        # 获取历史数据
-        fetcher = Fetcher()
-        data = fetcher.get_kline_data(
+        # 获取历史数据 - 需要足够多的数据计算指标
+        # 策略可能需要长期均线(如MA60)，所以获取更多历史数据
+        from datetime import datetime
+        try:
+            start = datetime.strptime(request.start_date, "%Y-%m-%d")
+            end = datetime.strptime(request.end_date, "%Y-%m-%d")
+            # 需要: (end - start) + 额外100天用于计算指标
+            days = (end - start).days + 100
+        except:
+            days = 365
+        
+        data = data_fetcher.get_a_share_kline(
             symbol=request.symbol,
-            start_date=request.start_date,
-            end_date=request.end_date
+            days=days
         )
         
-        if not data or len(data) < 30:
+        if not data or len(data) < 50:
             raise HTTPException(
                 status_code=400,
-                detail=f"无法获取 {request.symbol} 的历史数据，或数据不足30条"
+                detail=f"无法获取 {request.symbol} 的历史数据，或数据不足50条"
+            )
+        
+        # 找到回测区间在完整数据中的位置
+        # 保留完整数据用于指标计算，但标记回测区间
+        full_data = data
+        
+        # 找到回测开始日期在数据中的索引
+        start_idx = 0
+        for i, d in enumerate(full_data):
+            if d['date'] >= request.start_date:
+                start_idx = i
+                break
+        
+        # 找到回测结束日期在数据中的索引
+        end_idx = len(full_data)
+        for i in range(len(full_data) - 1, -1, -1):
+            if full_data[i]['date'] <= request.end_date:
+                end_idx = i + 1
+                break
+        
+        # 确保有足够的预热数据计算指标
+        if start_idx < 30:
+            # 如果开始位置太早，保留所有数据，但指标可能在前面不准确
+            pass
+        
+        # 截取回测区间（包含前面用于计算指标的数据）
+        data = full_data[:end_idx]
+        
+        # 记录实际的回测开始索引（用于过滤信号）
+        actual_start_idx = start_idx
+        
+        if len(data) < 30:
+            raise HTTPException(
+                status_code=400,
+                detail=f"数据不足，需要至少30条数据用于指标计算，当前只有{len(data)}条"
             )
         
         # 创建策略实例
@@ -124,9 +167,14 @@ async def run_backtest(request: BacktestRequest):
         
         # 执行回测
         engine = BacktestEngine(initial_capital=initial_capital)
-        result = engine.run(strategy, data)
+        result = engine.run(strategy, data, actual_start_idx=actual_start_idx)
         
-        return result.to_dict()
+        # 转换结果为字典，并修正日期范围
+        result_dict = result.to_dict()
+        result_dict['summary']['start_date'] = request.start_date
+        result_dict['summary']['end_date'] = request.end_date
+        
+        return result_dict
         
     except HTTPException:
         raise

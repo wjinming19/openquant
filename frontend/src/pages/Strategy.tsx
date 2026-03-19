@@ -10,7 +10,7 @@ const { Title, Text } = Typography;
 const { RangePicker } = DatePicker;
 const { TabPane } = Tabs;
 
-const API_BASE = 'http://170.106.119.80:8089/api';
+const API_BASE = 'http://170.106.119.80:8090/api';
 
 interface PageProps {
   darkMode: boolean;

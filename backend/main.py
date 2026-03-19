@@ -12,6 +12,11 @@ from app.api import market, strategy, stock, analysis, watchlist
 from app.core.config import settings
 from app.core.database import engine, Base
 from app.services.scheduler import start_scheduler, stop_scheduler
+from app.data.tushare_data import init_tushare
+from app.data.realtime_service import start_realtime_service
+
+# 初始化 Tushare
+init_tushare("207a3e3e4106e0afe2acc6c15cb26bea6092045c135e6c703614d8e9")
 
 # 创建数据库表
 Base.metadata.create_all(bind=engine)
@@ -22,6 +27,9 @@ async def lifespan(app: FastAPI):
     # 启动时
     print("🚀 OpenQuant Backend Starting...")
     start_scheduler()
+    # 启动实时数据服务（2000+积分权限）
+    print("📊 启动实时行情数据服务...")
+    start_realtime_service()
     yield
     # 关闭时
     print("👋 OpenQuant Backend Stopping...")

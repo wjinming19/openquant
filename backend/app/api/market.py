@@ -11,6 +11,8 @@ from datetime import datetime, timedelta
 from app.core.database import get_db
 from app.data.fetcher import data_fetcher
 from app.data.industry_fetcher import industry_fetcher, IndustryData, IndustryStock
+from app.data.tushare_force import get_tushare_stock_data, get_tushare_indices
+from app.data.realtime_service import realtime_service
 from app.core.indicators import TechnicalAnalyzer
 from app.models.schemas import StockData, MarketSentiment, SignalResponse
 
@@ -42,36 +44,36 @@ async def get_stock_rankings(
     limit: int = Query(50, ge=1, le=100, description="返回数量")
 ):
     """
-    获取股票排行榜
-    
-    类型:
-    - rise: 涨幅榜
-    - fall: 跌幅榜
-    - volume: 成交量榜
-    - turnover: 换手率榜
-    - fund: 资金流向榜
+    获取股票排行榜 - 使用Tushare全市场数据
     """
+    # 使用data_fetcher获取全市场数据（Tushare）
+    from app.data.fetcher import data_fetcher
     data = data_fetcher.get_stock_rankings(rank_type=type, limit=limit)
+    
     return {
         "type": type,
         "count": len(data),
         "timestamp": datetime.now().isoformat(),
-        "data": data
+        "data": data,
+        "source": "tushare_all_market"
     }
 
 
 @router.get("/indices")
 async def get_market_indices():
     """
-    获取市场指数
-    
-    返回: 上证指数、深证成指、创业板指、科创50
+    获取市场指数 - 使用实时数据
     """
+    from app.data.fetcher import data_fetcher
+    
+    # 使用数据获取器获取指数
     data = data_fetcher.get_market_indices()
+    
     return {
         "count": len(data),
         "timestamp": datetime.now().isoformat(),
-        "data": data
+        "data": data,
+        "source": "tencent_realtime"
     }
 
 @router.get("/stocks")

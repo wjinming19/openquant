@@ -12,7 +12,7 @@ const { TabPane } = Tabs;
 const { Search } = Input;
 const { TextArea } = Input;
 
-const API_BASE = 'http://170.106.119.80:8089/api';
+const API_BASE = 'http://170.106.119.80:8090/api';
 
 interface PageProps {
   darkMode: boolean;
@@ -71,31 +71,100 @@ const Watchlist: React.FC<PageProps> = ({ darkMode, setDarkMode }) => {
   const [alertMessages, setAlertMessages] = useState<{symbol: string, message: string, type: 'success' | 'warning'}[]>([]);
   const [sortBy, setSortBy] = useState<'custom' | 'change' | 'score' | 'name'>('custom');
 
-  // 从localStorage加载自选股和分组
+  // 从后端API加载自选股
   useEffect(() => {
-    const saved = localStorage.getItem('openquant_watchlist');
     const savedGroups = localStorage.getItem('openquant_groups');
     
     if (savedGroups) {
       setGroups(JSON.parse(savedGroups));
     }
     
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      setWatchlist(parsed);
-      // 检查预警
-      checkAlerts(parsed);
-    } else {
-      // 默认自选股
-      const defaultList: WatchStock[] = [
-        { symbol: '600519', name: '贵州茅台', price: 1413.64, change_pct: 1.55, score: -2.8, rating: '看空', group: 'consumer', addedAt: new Date().toISOString() },
-        { symbol: '0700.HK', name: '腾讯控股', price: 385.2, change_pct: -0.8, score: 1.2, rating: '看多', group: 'hk', addedAt: new Date().toISOString() },
-        { symbol: '300750', name: '宁德时代', price: 198.5, change_pct: 2.1, score: 2.5, rating: '强烈看多', group: 'tech', addedAt: new Date().toISOString() },
-      ];
-      setWatchlist(defaultList);
-      localStorage.setItem('openquant_watchlist', JSON.stringify(defaultList));
-    }
+    // 从后端API获取自选股
+    fetchWatchlistFromAPI();
   }, []);
+
+  // 从后端API获取自选股
+  const fetchWatchlistFromAPI = async () => {
+    setLoading(true);
+    try {
+      const response = await axios.get(`${API_BASE}/watchlist/list`);
+      if (response.data && response.data.watchlists) {
+        // 将分组数据扁平化为股票列表
+        const apiData: WatchStock[] = [];
+        response.data.watchlists.forEach((group: any) => {
+          if (group.stocks && Array.isArray(group.stocks)) {
+            group.stocks.forEach((stock: any) => {
+              apiData.push({
+                symbol: stock.symbol,
+                name: stock.name,
+                price: stock.price || 0,
+                change_pct: stock.change_pct || 0,
+                score: stock.score || 0,
+                rating: stock.rating || '-',
+                group: group.id,
+                notes: stock.notes,
+                alertPrice: stock.alert_high || stock.alert_low,
+                alertDirection: stock.alert_high ? 'above' : (stock.alert_low ? 'below' : undefined),
+                addedAt: stock.added_at,
+              });
+            });
+          }
+        });
+        
+        // 获取实时股价
+        const stocksWithPrice = await fetchRealtimePrices(apiData);
+        setWatchlist(stocksWithPrice);
+        // 同时更新localStorage保持同步
+        localStorage.setItem('openquant_watchlist', JSON.stringify(stocksWithPrice));
+        // 检查预警
+        checkAlerts(stocksWithPrice);
+      }
+    } catch (error) {
+      console.error('获取自选股失败:', error);
+      message.error('获取自选股失败，使用本地数据');
+      // 失败时回退到localStorage
+      const saved = localStorage.getItem('openquant_watchlist');
+      if (saved) {
+        setWatchlist(JSON.parse(saved));
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 获取实时股价
+  const fetchRealtimePrices = async (stocks: WatchStock[]): Promise<WatchStock[]> => {
+    if (stocks.length === 0) return stocks;
+    
+    try {
+      // 使用涨幅榜API获取实时价格（因为后端没有单独的股票价格查询接口）
+      const response = await axios.get(`${API_BASE}/market/rankings`, {
+        params: { type: 'rise', limit: 100 },
+        timeout: 10000
+      });
+      
+      if (response.data && Array.isArray(response.data.data)) {
+        const realtimeData = response.data.data;
+        
+        // 更新自选股价格
+        return stocks.map(stock => {
+          const realtime = realtimeData.find((r: any) => r.symbol === stock.symbol);
+          if (realtime) {
+            return {
+              ...stock,
+              price: realtime.price || 0,
+              change_pct: realtime.change_pct || 0,
+            };
+          }
+          return stock;
+        });
+      }
+    } catch (error) {
+      console.error('获取实时价格失败:', error);
+    }
+    
+    return stocks;
+  };
 
   // 保存到localStorage
   const saveWatchlist = (list: WatchStock[]) => {
@@ -151,32 +220,47 @@ const Watchlist: React.FC<PageProps> = ({ darkMode, setDarkMode }) => {
     navigate(key);
   };
 
-  // 添加自选股
-  const handleAddStock = (values: any) => {
-    const newStock: WatchStock = {
-      symbol: values.symbol,
-      name: values.name || values.symbol,
-      price: 0,
-      change_pct: 0,
-      score: 0,
-      rating: '-',
-      alertPrice: values.alertPrice ? parseFloat(values.alertPrice) : undefined,
-      alertDirection: values.alertDirection || 'above',
-      notes: values.notes,
-      group: values.group || 'default',
-      addedAt: new Date().toISOString()
-    };
-    
-    if (watchlist.find(s => s.symbol === newStock.symbol)) {
+  // 添加自选股 - 调用后端API
+  const handleAddStock = async (values: any) => {
+    if (watchlist.find(s => s.symbol === values.symbol)) {
       message.warning('该股票已在自选列表中');
       return;
     }
     
-    const newList = [...watchlist, newStock];
-    saveWatchlist(newList);
-    setIsModalOpen(false);
-    form.resetFields();
-    message.success('添加成功');
+    try {
+      // 先获取或创建默认分组
+      const listRes = await axios.get(`${API_BASE}/watchlist/list`);
+      let defaultGroupId = 'wl_1';
+      
+      if (listRes.data && listRes.data.count === 0) {
+        // 没有分组，创建默认分组
+        const createRes = await axios.post(`${API_BASE}/watchlist/create`, {
+          name: '我的自选'
+        });
+        if (createRes.data && createRes.data.watchlist) {
+          defaultGroupId = createRes.data.watchlist.id;
+        }
+      } else if (listRes.data && listRes.data.watchlists && listRes.data.watchlists.length > 0) {
+        defaultGroupId = listRes.data.watchlists[0].id;
+      }
+      
+      // 调用后端API添加股票到分组
+      const response = await axios.post(`${API_BASE}/watchlist/${defaultGroupId}/add`, {
+        symbol: values.symbol,
+        name: values.name || values.symbol,
+      });
+      
+      if (response.data && response.data.success) {
+        // 重新获取列表
+        await fetchWatchlistFromAPI();
+        setIsModalOpen(false);
+        form.resetFields();
+        message.success('添加成功');
+      }
+    } catch (error: any) {
+      console.error('添加失败:', error);
+      message.error(error.response?.data?.detail || '添加失败');
+    }
   };
 
   // 删除自选股
