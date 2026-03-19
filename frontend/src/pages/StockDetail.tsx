@@ -1,13 +1,22 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { Layout, Card, Spin, Typography, Button, Descriptions, Tabs, message } from 'antd';
 import { ArrowLeftOutlined } from '@ant-design/icons';
 import axios from 'axios';
+import './Dashboard.css';
 
 const { Title, Text } = Typography;
 const { TabPane } = Tabs;
 
 const API_BASE = 'http://170.106.119.80:8090';
+
+const menuItems = [
+  { key: '/dashboard', icon: '📊', label: '大盘' },
+  { key: '/strategy', icon: '📈', label: '策略' },
+  { key: '/stock-select', icon: '🔍', label: '选股' },
+  { key: '/market', icon: '💹', label: '行情' },
+  { key: '/watchlist', icon: '⭐', label: '自选' },
+];
 
 interface StockInfo {
   symbol: string;
@@ -24,6 +33,7 @@ interface StockInfo {
 const StockDetail: React.FC = () => {
   const { symbol } = useParams<{ symbol: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const [loading, setLoading] = useState(true);
   const [stockInfo, setStockInfo] = useState<StockInfo | null>(null);
 
@@ -111,6 +121,20 @@ const StockDetail: React.FC = () => {
             </TabPane>
           </Tabs>
         </Card>
+      </div>
+      
+      {/* 移动端底部导航 */}
+      <div className="mobile-nav">
+        {menuItems.map(item => (
+          <div
+            key={item.key}
+            className={`mobile-nav-item ${location.pathname === item.key ? 'active' : ''}`}
+            onClick={() => navigate(item.key)}
+          >
+            <span className="mobile-nav-icon">{item.icon}</span>
+            <span className="mobile-nav-text">{item.label}</span>
+          </div>
+        ))}
       </div>
     </Layout>
   );

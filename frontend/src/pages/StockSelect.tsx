@@ -1187,6 +1187,20 @@ const StockSelect: React.FC<PageProps> = ({ darkMode, setDarkMode }) => {
           </div>
         )}
       </Drawer>
+      
+      {/* 移动端底部导航 */}
+      <div className={`mobile-nav ${darkMode ? 'dark' : ''}`}>
+        {menuItems.map(item => (
+          <div
+            key={item.key}
+            className={`mobile-nav-item ${location.pathname === item.key ? 'active' : ''}`}
+            onClick={() => navigate(item.key)}
+          >
+            <span className="mobile-nav-icon">{item.icon}</span>
+            <span className="mobile-nav-text">{item.label}</span>
+          </div>
+        ))}
+      </div>
     </Layout>
   );
 };
