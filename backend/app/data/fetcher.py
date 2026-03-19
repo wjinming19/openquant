@@ -21,6 +21,37 @@ class DataFetcher:
         self.session.headers.update({
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
         })
+        self._stock_names_cache = None
+        self.TUSHARE_TOKEN = "207a3e3e4106e0afe2acc6c15cb26bea6092045c135e6c703614d8e9"
+    
+    def _load_stock_names(self):
+        """加载股票名称映射"""
+        if self._stock_names_cache is not None:
+            return self._stock_names_cache
+        
+        try:
+            payload = {
+                "api_name": "stock_basic",
+                "token": self.TUSHARE_TOKEN,
+                "params": {"exchange": "", "list_status": "L"},
+                "fields": "ts_code,name"
+            }
+            resp = self.session.post("https://api.tushare.pro", json=payload, timeout=30)
+            data = resp.json()
+            
+            if data.get("data") and data["data"].get("items"):
+                self._stock_names_cache = {item[0]: item[1] for item in data["data"]["items"]}
+                print(f"✅ 加载 {len(self._stock_names_cache)} 只股票名称")
+                return self._stock_names_cache
+        except Exception as e:
+            print(f"加载股票名称失败: {e}")
+        
+        return {}
+    
+    def _get_stock_name(self, ts_code: str) -> str:
+        """获取股票名称"""
+        names = self._load_stock_names()
+        return names.get(ts_code, ts_code.split('.')[0])
     
     def get_a_share_kline(self, symbol: str, days: int = 60) -> Optional[List[Dict]]:
         """获取A股K线数据 - 优先使用AKShare"""
@@ -185,9 +216,12 @@ class DataFetcher:
                         if abs(change_pct) > 20:
                             continue
                         
+                        # 获取股票名称（从ts_code映射）
+                        name = self._get_stock_name(ts_code)
+                        
                         all_data.append({
                             'symbol': symbol,
-                            'name': '-',  # 暂不获取名称，减少API调用
+                            'name': name,  # 获取实际股票名称
                             'price': round(price, 2),
                             'change_pct': round(change_pct, 2),
                             'volume': int(volume * 100),  # 手转股
